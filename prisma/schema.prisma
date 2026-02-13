@@ -1,0 +1,108 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  resetTokens PasswordResetToken[]
+  sessions    ConsultSession[]
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+enum ConsultStatus {
+  IN_PROGRESS
+  WAITING_EVAL
+  DONE
+}
+
+enum MessageRole {
+  STUDENT
+  PATIENT_AI
+  COORDINATOR_AI
+  SYSTEM
+}
+
+model Case {
+  id        String   @id @default(cuid())
+  title     String
+  triage    String?
+  seed      String
+  createdAt DateTime @default(now())
+
+  sessions ConsultSession[]
+}
+
+model ConsultSession {
+  id        String        @id @default(cuid())
+  userId    String
+  caseId    String
+  status    ConsultStatus @default(IN_PROGRESS)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  case       Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  messages   Message[]
+  memory     ConsultMemory?
+  evaluation Evaluation?
+
+  @@index([userId])
+  @@index([caseId])
+}
+
+model Message {
+  id        String      @id @default(cuid())
+  sessionId String
+  role      MessageRole
+  content   String
+  createdAt DateTime    @default(now())
+
+  session ConsultSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([createdAt])
+}
+
+model ConsultMemory {
+  id        String   @id @default(cuid())
+  sessionId String   @unique
+  summary   String   @default("")
+  facts     Json?
+  turnCount Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  session ConsultSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model Evaluation {
+  id           String   @id @default(cuid())
+  sessionId    String   @unique
+  score        Int
+  strengths    Json?
+  weaknesses   Json?
+  improvements Json?
+  feedback     String
+  createdAt    DateTime @default(now())
+
+  session ConsultSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
