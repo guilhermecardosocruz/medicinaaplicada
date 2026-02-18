@@ -1,0 +1,125 @@
+
+===== prisma/schema.prisma =====
+1 generator client {
+2   provider = "prisma-client-js"
+3 }
+4 
+5 datasource db {
+6   provider  = "postgresql"
+7   url       = env("DATABASE_URL")
+8   directUrl = env("DIRECT_URL")
+9 }
+10 
+11 model User {
+12   id           String   @id @default(cuid())
+13   name         String
+14   email        String   @unique
+15   passwordHash String
+16   createdAt    DateTime @default(now())
+17   updatedAt    DateTime @updatedAt
+18 
+19   resetTokens PasswordResetToken[]
+20   sessions    ConsultSession[]
+21 }
+22 
+23 model PasswordResetToken {
+24   id        String   @id @default(cuid())
+25   token     String   @unique
+26   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+27   userId    String
+28   expiresAt DateTime
+29   createdAt DateTime @default(now())
+30 }
+31 
+32 enum ConsultStatus {
+33   IN_PROGRESS
+34   WAITING_EVAL
+35   DONE
+36 }
+37 
+38 enum MessageRole {
+39   STUDENT
+40   PATIENT_AI
+41   COORDINATOR_AI
+42   SYSTEM
+43 }
+44 
+45 model Case {
+46   id        String   @id @default(cuid())
+47   title     String
+48   triage    String?
+49   seed      String
+50   createdAt DateTime @default(now())
+51 
+52   sessions ConsultSession[]
+53 }
+54 
+55 model ConsultSession {
+56   id        String        @id @default(cuid())
+57   userId    String
+58   caseId    String
+59   status    ConsultStatus @default(IN_PROGRESS)
+60   createdAt DateTime      @default(now())
+61   updatedAt DateTime      @updatedAt
+62 
+63   user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
+64   case       Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+65   messages   Message[]
+66   memory     ConsultMemory?
+67   evaluation Evaluation?
+68 
+69   @@index([userId])
+70   @@index([caseId])
+71 }
+72 
+73 model Message {
+74   id        String      @id @default(cuid())
+75   sessionId String
+76   role      MessageRole
+77   content   String
+78   createdAt DateTime    @default(now())
+79 
+80   session ConsultSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+81 
+82   @@index([sessionId])
+83   @@index([createdAt])
+84 }
+85 
+86 model ConsultMemory {
+87   id        String   @id @default(cuid())
+88   sessionId String   @unique
+89   summary   String   @default("")
+90   facts     Json?
+91   turnCount Int      @default(0)
+92   updatedAt DateTime @updatedAt
+93 
+94   session ConsultSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+95 }
+96 
+97 model Evaluation {
+98   id           String   @id @default(cuid())
+99   sessionId    String   @unique
+100   score        Int
+101   strengths    Json?
+102   weaknesses   Json?
+103   improvements Json?
+104   feedback     String
+105   createdAt    DateTime @default(now())
+106 
+107   session ConsultSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+108 }
+
+===== lib/prisma.ts =====
+1 import { PrismaClient } from "@prisma/client";
+2 
+3 const globalForPrisma = globalThis as unknown as {
+4   prisma: PrismaClient | undefined;
+5 };
+6 
+7 export const prisma =
+8   globalForPrisma.prisma ??
+9   new PrismaClient({
+10     log: ["query", "error", "warn"],
+11   });
+12 
+13 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;

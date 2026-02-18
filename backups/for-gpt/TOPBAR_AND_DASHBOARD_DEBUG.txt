@@ -1,0 +1,278 @@
+
+===== components/AppTopbar.tsx =====
+1 "use client";
+2 
+3 import Link from "next/link";
+4 import { useEffect, useMemo, useRef, useState } from "react";
+5 import { usePathname, useRouter } from "next/navigation";
+6 import { ThemeToggle } from "@/components/theme/ThemeToggle";
+7 
+8 type User = {
+9   id?: string;
+10   name?: string | null;
+11   email?: string | null;
+12 };
+13 
+14 type MeResponse =
+15   | { authenticated: true; user: { id: string; name: string; email: string } }
+16   | { authenticated: false }
+17   | { user?: unknown }
+18   | unknown;
+19 
+20 function isRecord(v: unknown): v is Record<string, unknown> {
+21   return typeof v === "object" && v !== null;
+22 }
+23 
+24 function pickString(v: unknown): string | undefined {
+25   return typeof v === "string" ? v : undefined;
+26 }
+27 
+28 function parseUserFromMePayload(payload: MeResponse): User | null {
+29   if (!isRecord(payload)) return null;
+30 
+31   const directUser = payload["user"];
+32   if (isRecord(directUser)) {
+33     const id = pickString(directUser["id"]);
+34     const name = pickString(directUser["name"]);
+35     const email = pickString(directUser["email"]);
+36     if (id) return { id, name: name ?? null, email: email ?? null };
+37   }
+38 
+39   const me = payload["me"];
+40   if (isRecord(me)) {
+41     const id = pickString(me["id"]);
+42     const name = pickString(me["name"]);
+43     const email = pickString(me["email"]);
+44     if (id) return { id, name: name ?? null, email: email ?? null };
+45   }
+46 
+47   return null;
+48 }
+49 
+50 export function AppTopbar() {
+51   const router = useRouter();
+52   const pathname = usePathname();
+53 
+54   const [user, setUser] = useState<User | null>(null);
+55   const [loaded, setLoaded] = useState(false);
+56   const [menuOpen, setMenuOpen] = useState(false);
+57   const menuRef = useRef<HTMLDivElement | null>(null);
+58 
+59   const isAuthed = !!user?.id;
+60 
+61   const firstName = useMemo(() => {
+62     if (!user?.name) return "usuário";
+63     const part = String(user.name).split(" ")[0];
+64     return part || "usuário";
+65   }, [user]);
+66 
+67   const showAuthUI = useMemo(() => {
+68     return !(
+69       pathname?.startsWith("/login") ||
+70       pathname?.startsWith("/register") ||
+71       pathname?.startsWith("/recover") ||
+72       pathname?.startsWith("/reset")
+73     );
+74   }, [pathname]);
+75 
+76   useEffect(() => {
+77     let active = true;
+78 
+79     async function loadMe() {
+80       try {
+81         const res = await fetch("/api/auth/me", { cache: "no-store" });
+82         if (!active) return;
+83 
+84         if (!res.ok) {
+85           setUser(null);
+86           return;
+87         }
+88 
+89         const data = (await res.json().catch(() => null)) as MeResponse;
+90         const parsed = parseUserFromMePayload(data);
+91         setUser(parsed);
+92       } catch {
+93         if (!active) return;
+94         setUser(null);
+95       } finally {
+96         if (active) setLoaded(true);
+97       }
+98     }
+99 
+100     void loadMe();
+101     return () => {
+102       active = false;
+103     };
+104   }, []);
+105 
+106   useEffect(() => {
+107     function onClick(e: MouseEvent) {
+108       if (!menuOpen) return;
+109       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+110         setMenuOpen(false);
+111       }
+112     }
+113     document.addEventListener("mousedown", onClick);
+114     return () => document.removeEventListener("mousedown", onClick);
+115   }, [menuOpen]);
+116 
+117   async function handleLogout() {
+118     try {
+119       await fetch("/api/auth/logout", { method: "POST" });
+120     } catch {
+121       // ignore
+122     } finally {
+123       setUser(null);
+124       setMenuOpen(false);
+125       router.push("/login");
+126       router.refresh();
+127     }
+128   }
+129 
+130   return (
+131     <header className="fixed inset-x-0 top-0 z-50 border-b border-[var(--border)] bg-card-strong backdrop-blur">
+132       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
+133         <Link href="/" className="text-sm font-semibold text-app hover:opacity-80">
+134           Medicina Aplicada
+135         </Link>
+136 
+137         <div className="flex items-center gap-3">
+138           <nav className="hidden sm:flex items-center gap-3">
+139             <Link href="/dashboard" className="text-xs font-medium text-muted hover:opacity-80">
+140               Dashboard
+141             </Link>
+142 
+143             <Link href="/desempenho" className="text-xs font-medium text-muted hover:text-app">
+144               Desempenho
+145             </Link>
+146 
+147             <Link href="/retornos" className="text-xs font-medium text-muted hover:text-app">
+148               Retornos
+149             </Link>
+150 
+151             {showAuthUI && (
+152               <>
+153                 {!loaded && <span className="text-[11px] text-muted">Carregando...</span>}
+154 
+155                 {loaded && isAuthed && (
+156                   <>
+157                     <span className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-card px-3 py-1.5 text-[11px] font-semibold text-app">
+158                       <span>Olá, {firstName}</span>
+159                       <span className="h-2 w-2 rounded-full bg-emerald-500" />
+160                     </span>
+161 
+162                     <button
+163                       type="button"
+164                       onClick={handleLogout}
+165                       className="text-xs font-medium text-red-400 hover:text-red-500"
+166                     >
+167                       Sair
+168                     </button>
+169                   </>
+170                 )}
+171 
+172                 {loaded && !isAuthed && (
+173                   <Link
+174                     href={`/login?next=${encodeURIComponent(pathname || "/dashboard")}`}
+175                     className="text-xs font-semibold text-emerald-400 hover:text-emerald-500"
+176                   >
+177                     Entrar
+178                   </Link>
+179                 )}
+180               </>
+181             )}
+182           </nav>
+183 
+184           {showAuthUI && (
+185             <div className="relative sm:hidden" ref={menuRef}>
+186               <button
+187                 type="button"
+188                 onClick={() => setMenuOpen((v) => !v)}
+189                 className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-card px-3 py-1.5 text-xs font-semibold text-app"
+190                 aria-haspopup="menu"
+191                 aria-expanded={menuOpen}
+192               >
+193                 <span>Menu</span>
+194                 {loaded && isAuthed && <span className="h-2 w-2 rounded-full bg-emerald-500" />}
+195               </button>
+196 
+197               {menuOpen && (
+198                 <div className="absolute right-0 mt-2 w-56 rounded-2xl border border-[var(--border)] bg-card shadow-xl overflow-hidden">
+199                   <div className="px-4 py-3">
+200                     {loaded ? (
+201                       isAuthed ? (
+202                         <div className="flex items-center justify-between">
+203                           <span className="text-xs font-semibold text-app">Olá, {firstName}</span>
+204                           <span className="flex items-center gap-2 text-[11px] text-muted">
+205                             <span className="h-2 w-2 rounded-full bg-emerald-500" />
+206                             Logado
+207                           </span>
+208                         </div>
+209                       ) : (
+210                         <div className="flex items-center justify-between">
+211                           <span className="text-xs font-semibold text-app">Você não está logado</span>
+212                           <span className="text-[11px] text-muted">Visitante</span>
+213                         </div>
+214                       )
+215                     ) : (
+216                       <span className="text-xs text-muted">Carregando...</span>
+217                     )}
+218                   </div>
+219 
+220                   <div className="h-px bg-[var(--border)]" />
+221 
+222                   <Link href="/dashboard" onClick={() => setMenuOpen(false)} className="block px-4 py-3 text-xs font-medium hover:bg-card/70">
+223                     Dashboard
+224                   </Link>
+225                   <Link href="/desempenho" onClick={() => setMenuOpen(false)} className="block px-4 py-3 text-xs font-medium hover:bg-card/70">
+226                     Desempenho
+227                   </Link>
+228                   <Link href="/retornos" onClick={() => setMenuOpen(false)} className="block px-4 py-3 text-xs font-medium hover:bg-card/70">
+229                     Retornos
+230                   </Link>
+231 
+232                   <div className="h-px bg-[var(--border)]" />
+233 
+234                   {isAuthed ? (
+235                     <button onClick={handleLogout} className="w-full px-4 py-3 text-left text-xs font-semibold text-red-400 hover:bg-card/70">
+236                       Sair
+237                     </button>
+238                   ) : (
+239                     <Link
+240                       href={`/login?next=${encodeURIComponent(pathname || "/dashboard")}`}
+241                       onClick={() => setMenuOpen(false)}
+242                       className="block px-4 py-3 text-xs font-semibold text-emerald-400 hover:bg-card/70"
+243                     >
+244                       Entrar
+245                     </Link>
+246                   )}
+247                 </div>
+248               )}
+249             </div>
+250           )}
+251 
+252           <ThemeToggle />
+253         </div>
+254       </div>
+255     </header>
+256   );
+257 }
+
+===== app/(app)/dashboard/page.tsx =====
+1 export default function DashboardPage() {
+2   return (
+3     <main className="mx-auto max-w-6xl px-4 py-8">
+4       <h1 className="text-xl font-semibold">Dashboard</h1>
+5       <p className="mt-2 text-sm text-muted">
+6         Aqui vai aparecer a fila de pacientes (cards) e o botão para atender o próximo.
+7       </p>
+8 
+9       <div className="mt-6 surface p-4">
+10         <div className="text-sm font-semibold">Fila (MVP)</div>
+11         <div className="mt-2 text-sm text-muted">
+12           Em breve: cards de pacientes gerados por IA no momento em que você clicar em “Atender”.
+13         </div>
+14       </div>
+15     </main>
+16   );
+17 }

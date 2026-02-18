@@ -1,0 +1,103 @@
+./
+├── app/
+│   ├── api/
+│   │   ├── auth/
+│   │   │   ├── login/
+│   │   │   │   └── route.ts
+│   │   │   ├── logout/
+│   │   │   │   └── route.ts
+│   │   │   ├── me/
+│   │   │   │   └── route.ts
+│   │   │   ├── recover/
+│   │   │   │   └── route.ts
+│   │   │   ├── register/
+│   │   │   │   └── route.ts
+│   │   │   └── reset/
+│   │   │       └── route.ts
+│   │   ├── cases/
+│   │   │   └── next/
+│   │   │       └── route.ts
+│   │   └── sessions/
+│   │       ├── [id]/
+│   │       │   ├── finalize/
+│   │       │   │   └── route.ts
+│   │       │   └── messages/
+│   │       │       └── route.ts
+│   │       └── my/
+│   │           └── route.ts
+│   ├── (app)/
+│   │   ├── consultas/
+│   │   │   └── [id]/
+│   │   │       ├── ConsultClient.tsx
+│   │   │       └── page.tsx
+│   │   ├── dashboard/
+│   │   │   ├── DashboardClient.tsx
+│   │   │   └── page.tsx
+│   │   ├── desempenho/
+│   │   │   └── page.tsx
+│   │   ├── layout.tsx
+│   │   └── retornos/
+│   │       └── page.tsx
+│   ├── (auth)/
+│   │   ├── layout.tsx
+│   │   ├── login/
+│   │   │   ├── LoginClient.tsx
+│   │   │   └── page.tsx
+│   │   ├── recover/
+│   │   │   ├── page.tsx
+│   │   │   └── RecoverClient.tsx
+│   │   ├── register/
+│   │   │   ├── page.tsx
+│   │   │   └── RegisterClient.tsx
+│   │   └── reset/
+│   │       └── [token]/
+│   ├── favicon.ico
+│   ├── globals.css
+│   ├── layout.tsx
+│   ├── manifest.webmanifest/
+│   │   └── route.ts
+│   └── page.tsx
+├── backups/
+│   └── for-gpt/
+│       ├── PRISMA_CORE_DEBUG.txt
+│       ├── TOPBAR_AND_DASHBOARD_DEBUG.txt
+│       └── TREE.txt
+├── components/
+│   ├── AppTopbar.tsx
+│   ├── PwaProvider.tsx
+│   └── theme/
+│       ├── ThemeProvider.tsx
+│       └── ThemeToggle.tsx
+├── .env
+├── .env.example
+├── eslint.config.mjs
+├── .gitignore
+├── lib/
+│   ├── auth.ts
+│   ├── openai.ts
+│   ├── prisma.ts
+│   ├── session.ts
+│   └── validation.ts
+├── middleware.ts
+├── next.config.ts
+├── next-env.d.ts
+├── package.json
+├── pnpm-lock.yaml
+├── postcss.config.mjs
+├── prisma/
+│   ├── migrations/
+│   │   ├── 20260213191705_init/
+│   │   │   └── migration.sql
+│   │   └── migration_lock.toml
+│   └── schema.prisma
+├── public/
+│   ├── file.svg
+│   ├── globe.svg
+│   ├── next.svg
+│   ├── sw.js
+│   ├── vercel.svg
+│   └── window.svg
+├── README.md
+└── tsconfig.json
+
+38 directories, 62 files
