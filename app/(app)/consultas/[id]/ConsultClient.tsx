@@ -78,10 +78,33 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
   }
 
   async function loadTests() {
-    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/tests`, { cache: "no-store" });
-    if (!res.ok) return;
-    const data = (await res.json()) as TestsGetPayload;
-    if (data?.ok) setTests(data);
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/tests`, { cache: "no-store" });
+
+      if (!res.ok) {
+        console.error("Falha ao carregar /tests:", res.status, res.statusText);
+        window.alert("Não foi possível carregar o catálogo de exames. Verifique o backend /tests.");
+        return;
+      }
+
+      const json = (await res.json().catch(() => null)) as TestsGetPayload | null;
+      if (!json || typeof json !== "object") {
+        console.error("Resposta inesperada em /tests:", json);
+        window.alert("Resposta inesperada ao carregar o catálogo de exames.");
+        return;
+      }
+
+      if (!json.ok) {
+        console.error("Payload de /tests com ok = false:", json);
+        window.alert("Backend retornou erro ao carregar o catálogo de exames.");
+        return;
+      }
+
+      setTests(json);
+    } catch (err) {
+      console.error("Erro ao requisitar /tests:", err);
+      window.alert("Erro de rede ao carregar o catálogo de exames.");
+    }
   }
 
   useEffect(() => {
@@ -273,16 +296,66 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
             <div className="mt-4 text-xs font-semibold">Exame físico (botões)</div>
             <div className="mt-2 flex flex-wrap gap-2">
-              <button className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80" onClick={() => void requestPhysical("vitals")}>Sinais vitais</button>
-              <button className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80" onClick={() => void requestPhysical("general")}>Inspeção geral</button>
-              <button className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80" onClick={() => void requestPhysical("heent")}>HEENT</button>
-              <button className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80" onClick={() => void requestPhysical("cardio")}>Cardiovascular</button>
-              <button className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80" onClick={() => void requestPhysical("resp")}>Respiratório</button>
-              <button className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80" onClick={() => void requestPhysical("abdomen")}>Abdome</button>
-              <button className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80" onClick={() => void requestPhysical("neuro")}>Neurológico</button>
-              <button className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80" onClick={() => void requestPhysical("skin")}>Pele</button>
-              <button className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80" onClick={() => void requestPhysical("extremities")}>Extremidades</button>
-              <button className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80" onClick={() => void requestPhysical("gynUro")}>Ginecológico/Urológico</button>
+              <button
+                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
+                onClick={() => void requestPhysical("vitals")}
+              >
+                Sinais vitais
+              </button>
+              <button
+                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
+                onClick={() => void requestPhysical("general")}
+              >
+                Inspeção geral
+              </button>
+              <button
+                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
+                onClick={() => void requestPhysical("heent")}
+              >
+                HEENT
+              </button>
+              <button
+                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
+                onClick={() => void requestPhysical("cardio")}
+              >
+                Cardiovascular
+              </button>
+              <button
+                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
+                onClick={() => void requestPhysical("resp")}
+              >
+                Respiratório
+              </button>
+              <button
+                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
+                onClick={() => void requestPhysical("abdomen")}
+              >
+                Abdome
+              </button>
+              <button
+                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
+                onClick={() => void requestPhysical("neuro")}
+              >
+                Neurológico
+              </button>
+              <button
+                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
+                onClick={() => void requestPhysical("skin")}
+              >
+                Pele
+              </button>
+              <button
+                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
+                onClick={() => void requestPhysical("extremities")}
+              >
+                Extremidades
+              </button>
+              <button
+                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
+                onClick={() => void requestPhysical("gynUro")}
+              >
+                Ginecológico/Urológico
+              </button>
             </div>
 
             <div className="mt-4 text-xs font-semibold">Exames (laboratório / imagem)</div>
@@ -297,7 +370,12 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
                         <input
                           type="checkbox"
                           checked={!!selectedTests[t.key]}
-                          onChange={(e) => setSelectedTests((s) => ({ ...s, [t.key]: e.target.checked }))}
+                          onChange={(e) =>
+                            setSelectedTests((s) => ({
+                              ...s,
+                              [t.key]: e.target.checked,
+                            }))
+                          }
                         />
                         <span>{t.label}</span>
                       </label>
@@ -338,10 +416,30 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
             <div className="mt-4 text-xs font-semibold">Retorno (mesma sessão)</div>
             <div className="mt-2 flex flex-wrap gap-2">
-              <button className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80" onClick={() => void followup("improved")}>Melhorou</button>
-              <button className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80" onClick={() => void followup("same")}>Permaneceu igual</button>
-              <button className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80" onClick={() => void followup("worse")}>Piorou</button>
-              <button className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80" onClick={() => void followup("sideEffect")}>Efeito colateral</button>
+              <button
+                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
+                onClick={() => void followup("improved")}
+              >
+                Melhorou
+              </button>
+              <button
+                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
+                onClick={() => void followup("same")}
+              >
+                Permaneceu igual
+              </button>
+              <button
+                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
+                onClick={() => void followup("worse")}
+              >
+                Piorou
+              </button>
+              <button
+                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
+                onClick={() => void followup("sideEffect")}
+              >
+                Efeito colateral
+              </button>
             </div>
           </div>
         )}
