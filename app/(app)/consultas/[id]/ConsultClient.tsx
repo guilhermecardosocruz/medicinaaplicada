@@ -30,25 +30,6 @@ type SessionPayload = {
   } | null;
 };
 
-type TestsGetPayload = {
-  ok: boolean;
-  catalog: { key: string; label: string }[];
-  orders: unknown;
-  results: unknown;
-};
-
-function pretty(v: unknown) {
-  try {
-    return JSON.stringify(v, null, 2);
-  } catch {
-    return String(v);
-  }
-}
-
-function hasValue(v: unknown): boolean {
-  return v !== null && v !== undefined;
-}
-
 export default function ConsultClient({ sessionId }: { sessionId: string }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -57,10 +38,6 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [text, setText] = useState("");
   const bottomRef = useRef<HTMLDivElement | null>(null);
-
-  const [showTools, setShowTools] = useState(false);
-  const [tests, setTests] = useState<TestsGetPayload | null>(null);
-  const [selectedTests, setSelectedTests] = useState<Record<string, boolean>>({});
 
   async function load() {
     setLoading(true);
@@ -74,36 +51,6 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
       if (data?.ok) setSession(data.session);
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function loadTests() {
-    try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/tests`, { cache: "no-store" });
-
-      if (!res.ok) {
-        console.error("Falha ao carregar /tests:", res.status, res.statusText);
-        window.alert("Não foi possível carregar o catálogo de exames. Verifique o backend /tests.");
-        return;
-      }
-
-      const json = (await res.json().catch(() => null)) as TestsGetPayload | null;
-      if (!json || typeof json !== "object") {
-        console.error("Resposta inesperada em /tests:", json);
-        window.alert("Resposta inesperada ao carregar o catálogo de exames.");
-        return;
-      }
-
-      if (!json.ok) {
-        console.error("Payload de /tests com ok = false:", json);
-        window.alert("Backend retornou erro ao carregar o catálogo de exames.");
-        return;
-      }
-
-      setTests(json);
-    } catch (err) {
-      console.error("Erro ao requisitar /tests:", err);
-      window.alert("Erro de rede ao carregar o catálogo de exames.");
     }
   }
 
@@ -132,6 +79,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
       });
 
       if (!res.ok) {
+        // se der erro, devolve o texto para o input
         setText(content);
         return;
       }
@@ -151,59 +99,6 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
     } finally {
       setFinalizing(false);
     }
-  }
-
-  async function ensureTriage() {
-    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/triage`, { method: "POST" });
-    if (res.ok) await load();
-  }
-
-  async function requestPhysical(
-    section:
-      | "vitals"
-      | "general"
-      | "heent"
-      | "cardio"
-      | "resp"
-      | "abdomen"
-      | "neuro"
-      | "skin"
-      | "extremities"
-      | "gynUro",
-  ) {
-    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/physical`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ section }),
-    });
-    if (res.ok) await load();
-  }
-
-  async function orderSelectedTests() {
-    if (!tests?.catalog?.length) return;
-    const keys = tests.catalog.map((c) => c.key).filter((k) => selectedTests[k]);
-    if (keys.length === 0) return;
-
-    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/tests`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ keys }),
-    });
-
-    if (res.ok) {
-      setSelectedTests({});
-      await load();
-      await loadTests();
-    }
-  }
-
-  async function followup(outcome: "improved" | "same" | "worse" | "sideEffect") {
-    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/followup`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ outcome }),
-    });
-    if (res.ok) await load();
   }
 
   if (loading) {
@@ -253,16 +148,6 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
           {session.status === "IN_PROGRESS" && (
             <div className="flex items-center gap-2">
               <button
-                onClick={async () => {
-                  setShowTools((v) => !v);
-                  if (!tests) await loadTests();
-                }}
-                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-              >
-                {showTools ? "Fechar ferramentas" : "Ferramentas"}
-              </button>
-
-              <button
                 onClick={finalize}
                 disabled={finalizing}
                 className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80 disabled:opacity-60"
@@ -272,177 +157,6 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
             </div>
           )}
         </div>
-
-        {showTools && session.status === "IN_PROGRESS" && (
-          <div className="mt-4 surface p-3">
-            <div className="text-xs font-semibold">Triagem</div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button
-                onClick={() => void ensureTriage()}
-                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-              >
-                Registrar triagem estruturada
-              </button>
-              <button
-                onClick={() => {
-                  const txt = hasValue(session.triageData) ? pretty(session.triageData) : "(sem triagem registrada)";
-                  navigator.clipboard?.writeText(txt).catch(() => {});
-                }}
-                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-              >
-                Copiar triagem JSON
-              </button>
-            </div>
-
-            <div className="mt-4 text-xs font-semibold">Exame físico (botões)</div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button
-                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-                onClick={() => void requestPhysical("vitals")}
-              >
-                Sinais vitais
-              </button>
-              <button
-                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-                onClick={() => void requestPhysical("general")}
-              >
-                Inspeção geral
-              </button>
-              <button
-                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-                onClick={() => void requestPhysical("heent")}
-              >
-                HEENT
-              </button>
-              <button
-                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-                onClick={() => void requestPhysical("cardio")}
-              >
-                Cardiovascular
-              </button>
-              <button
-                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-                onClick={() => void requestPhysical("resp")}
-              >
-                Respiratório
-              </button>
-              <button
-                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-                onClick={() => void requestPhysical("abdomen")}
-              >
-                Abdome
-              </button>
-              <button
-                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-                onClick={() => void requestPhysical("neuro")}
-              >
-                Neurológico
-              </button>
-              <button
-                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-                onClick={() => void requestPhysical("skin")}
-              >
-                Pele
-              </button>
-              <button
-                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-                onClick={() => void requestPhysical("extremities")}
-              >
-                Extremidades
-              </button>
-              <button
-                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-                onClick={() => void requestPhysical("gynUro")}
-              >
-                Ginecológico/Urológico
-              </button>
-            </div>
-
-            <div className="mt-4 text-xs font-semibold">Exames (laboratório / imagem)</div>
-            <div className="mt-2">
-              {!tests ? (
-                <div className="text-xs text-muted">Carregando catálogo…</div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {tests.catalog.map((t) => (
-                      <label key={t.key} className="flex items-center gap-2 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={!!selectedTests[t.key]}
-                          onChange={(e) =>
-                            setSelectedTests((s) => ({
-                              ...s,
-                              [t.key]: e.target.checked,
-                            }))
-                          }
-                        />
-                        <span>{t.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => void orderSelectedTests()}
-                      className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-                    >
-                      Solicitar exames selecionados
-                    </button>
-                    <button
-                      onClick={() => void loadTests()}
-                      className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-                    >
-                      Atualizar
-                    </button>
-                    <button
-                      onClick={() => {
-                        const txt = hasValue(session.results) ? pretty(session.results) : "(sem resultados)";
-                        navigator.clipboard?.writeText(txt).catch(() => {});
-                      }}
-                      className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-                    >
-                      Copiar resultados JSON
-                    </button>
-                  </div>
-
-                  {hasValue(session.results) && (
-                    <pre className="mt-2 max-h-48 overflow-auto rounded-xl border border-[var(--border)] bg-card px-3 py-2 text-[11px]">
-                      {pretty(session.results)}
-                    </pre>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="mt-4 text-xs font-semibold">Retorno (mesma sessão)</div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button
-                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-                onClick={() => void followup("improved")}
-              >
-                Melhorou
-              </button>
-              <button
-                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-                onClick={() => void followup("same")}
-              >
-                Permaneceu igual
-              </button>
-              <button
-                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-                onClick={() => void followup("worse")}
-              >
-                Piorou
-              </button>
-              <button
-                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80"
-                onClick={() => void followup("sideEffect")}
-              >
-                Efeito colateral
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       <div className="mt-4 space-y-3">

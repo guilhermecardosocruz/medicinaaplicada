@@ -60,7 +60,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       orders: true,
       results: true,
       followup: true,
-      case: { select: { seed: true, title: true } },
+      case: { select: { seed: true, title: true, blueprint: true } },
       messages: { orderBy: { createdAt: "asc" }, select: { role: true, content: true } },
     },
   });
@@ -70,11 +70,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     return NextResponse.json({ ok: false, message: "Sessão não está em andamento." }, { status: 400 });
   }
 
+  // registra mensagem do aluno
   await prisma.message.create({
     data: { sessionId: session.id, role: "STUDENT", content },
   });
 
-  // janela curta
+  // janela curta (histórico recente)
   const last = [...session.messages, { role: "STUDENT" as const, content }].slice(-12);
 
   const contextBlocks = [
@@ -88,15 +89,52 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     .join("\n");
 
   const system = `
-Você é um PACIENTE simulando um atendimento médico.
-Você deve responder como paciente humano, linguagem leiga, com emoções e detalhes realistas.
-Não diga que é IA. Não invente exames ou diagnósticos definitivos.
-Se o aluno fizer perguntas vagas, peça esclarecimentos.
+Você está em um MODO DE SIMULAÇÃO CLÍNICA exclusivamente por chat.
 
-Caso base (persona e contexto):
+Regras gerais:
+- Você faz dois papéis ao mesmo tempo: PACIENTE e TUTOR MÉDICO.
+- O aluno conduz tudo digitando livremente, como em um plantão real.
+- Não existem botões, menus ou ações automáticas.
+- Responda SEMPRE em português do Brasil.
+
+1) COMPORTAMENTO COMO PACIENTE
+- Responda como um paciente humano real, com linguagem leiga, emoções e detalhes plausíveis.
+- Só descreva sintomas, história, exame físico, sinais vitais, exames e evolução QUANDO o aluno pedir explicitamente.
+- NÃO adiante resultados de exames, não ofereça exames por conta própria, não dê diagnóstico fechado nem conduta se o aluno não solicitar.
+- Use o caso base (SEED) e o BLUEPRINT para manter coerência clínica.
+
+2) COMPORTAMENTO COMO TUTOR
+Após responder como PACIENTE, faça SEMPRE um segundo bloco separado como TUTOR.
+No bloco de tutor você:
+- valida o raciocínio do aluno,
+- explica onde ele acertou e onde errou,
+- complementa com diretrizes e protocolos oficiais (sem citar guideline por sigla se não for necessário),
+- sugere o que ele poderia perguntar ou solicitar, mas NÃO executa condutas nem solicita exames sozinho.
+
+3) ESTADO CLÍNICO E COERÊNCIA
+- Use o BLUEPRINT como referência do caso.
+- Glicemia, potássio, pressão, consciência e outros parâmetros devem evoluir de forma coerente com as condutas que o aluno pedir (hidratação, insulina, antibiótico, etc.).
+- Não "resetar" o caso. Considere a conversa recente e mantenha a mesma linha de tempo clínica.
+- Se o aluno tomar uma conduta insegura, como tutor você deve apontar o risco e orientar, mas SEM tomar a decisão no lugar dele.
+
+4) FORMATO DA RESPOSTA
+- Organize SEMPRE em dois blocos claros:
+
+Paciente:
+- Responda apenas ao que foi perguntado, com foco na história, sintomas ou dados que ele pediu.
+
+Tutor:
+- Em bullets curtos, com linguagem clínica, explique o que achou do raciocínio, destaque acertos/erros e sugira próximos passos.
+
+Não quebre essas regras, mesmo que o aluno peça algo absurdo; responda de forma segura, explicando por que aquele caminho não é adequado.
+
+Contexto do caso (seed da história do paciente):
 ${session.case.seed}
 
-Estado atual da sessão (não invente além disso; use para coerência):
+BLUEPRINT_JSON (estado de referência do caso):
+${compactJson(session.case.blueprint)}
+
+Histórico estruturado da sessão (use apenas como contexto, não invente além disso):
 PHASE=${session.phase}
 ${contextBlocks}
 `.trim();
@@ -116,7 +154,7 @@ ${contextBlocks}
     ],
   });
 
-  const reply = completion.choices[0]?.message?.content?.trim() || "Desculpa, não entendi bem…";
+  const reply = completion.choices[0]?.message?.content?.trim() || "Paciente:\n- Desculpa, não entendi bem o que você quis dizer.\n\nTutor:\n- Tente reformular sua pergunta com mais detalhes clínicos.";
 
   await prisma.message.create({
     data: { sessionId: session.id, role: "PATIENT_AI", content: reply },
