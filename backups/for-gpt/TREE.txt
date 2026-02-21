@@ -1,4 +1,6 @@
 ./
+├── .");
+├── {
 ├── app/
 │   ├── api/
 │   │   ├── auth/
@@ -21,7 +23,15 @@
 │   │       ├── [id]/
 │   │       │   ├── finalize/
 │   │       │   │   └── route.ts
-│   │       │   └── messages/
+│   │       │   ├── followup/
+│   │       │   │   └── route.ts
+│   │       │   ├── messages/
+│   │       │   │   └── route.ts
+│   │       │   ├── physical/
+│   │       │   │   └── route.ts
+│   │       │   ├── tests/
+│   │       │   │   └── route.ts
+│   │       │   └── triage/
 │   │       │       └── route.ts
 │   │       └── my/
 │   │           └── route.ts
@@ -59,6 +69,9 @@
 │   └── page.tsx
 ├── backups/
 │   └── for-gpt/
+│       ├── CLINICAL_SIM_ALL_FILES.txt
+│       ├── CONSULT_BUTTONS_NOT_CLICKABLE_DEBUG.txt
+│       ├── CONSULT_SESSION_TRIAGE_EXAMS_DEBUG.txt
 │       ├── PRISMA_CORE_DEBUG.txt
 │       ├── TOPBAR_AND_DASHBOARD_DEBUG.txt
 │       └── TREE.txt
@@ -68,9 +81,15 @@
 │   └── theme/
 │       ├── ThemeProvider.tsx
 │       └── ThemeToggle.tsx
+├── e client";
+├── eEffect(() => {
 ├── .env
 ├── .env.example
 ├── eslint.config.mjs
+├── e: "TRIAGE" | "CONSULT" | "FOLLOWUP" | "FINALIZED";
+├── etSending(true);
+├── etSession(null);
+├── etText(content);
 ├── .gitignore
 ├── lib/
 │   ├── auth.ts
@@ -83,10 +102,13 @@
 ├── next-env.d.ts
 ├── package.json
 ├── pnpm-lock.yaml
+├── posta inesperada ao carregar o catálogo de exames.");
 ├── postcss.config.mjs
 ├── prisma/
 │   ├── migrations/
 │   │   ├── 20260213191705_init/
+│   │   │   └── migration.sql
+│   │   ├── 20260218200345_consult_session_structured/
 │   │   │   └── migration.sql
 │   │   └── migration_lock.toml
 │   └── schema.prisma
@@ -98,6 +120,14 @@
 │   ├── vercel.svg
 │   └── window.svg
 ├── README.md
-└── tsconfig.json
+├── sName="mx-auto max-w-3xl px-4 pb-24 pt-6">
+├── sName="mx-auto max-w-3xl px-4 py-8">
+├── sName=rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80
+├── t json = (await res.json().catch(() => null)) as TestsGetPayload | null;
+├── t keys = tests.catalog.map((c) => c.key).filter((k) => selectedTests[k]);
+├── tPhysical("vitals")}
+├── tring
+├── tsconfig.json
+└── ultClient({ sessionId }: { sessionId: string }) {
 
-38 directories, 62 files
+43 directories, 87 files
