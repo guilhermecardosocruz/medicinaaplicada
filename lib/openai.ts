@@ -8,5 +8,5 @@ export function getOpenAIClient() {
 
 export function getOpenAIModel() {
   // Modelo barato e bom para MVP (pode trocar depois via env)
-  return process.env.OPENAI_MODEL || "gpt-4o-mini";
+  return process.env.OPENAI_MODEL || "gpt-4o";
 }
