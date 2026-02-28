@@ -131,11 +131,10 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
   }, [session, bootstrapped, sending]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // insere prefixos de modo no campo de texto
-  function insertPrefix(prefix: "Paciente:" | "Equipe:" | "Licença:" | "Tutor:") {
+  function insertPrefix(prefix: "Equipe:" | "Licença:" | "Tutor:") {
     setText((prev) => {
       const trimmed = prev.trimStart();
 
-      // se já começa com um dos prefixos, substitui pelo novo
       const existingPrefixes = ["Paciente:", "Equipe:", "Licença:", "Tutor:"] as const;
       const found = existingPrefixes.find((p) => trimmed.startsWith(p));
 
@@ -254,16 +253,10 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
         {session.status === "IN_PROGRESS" && (
           <div className="fixed inset-x-0 bottom-0 border-t border-[var(--border)] bg-card-strong/95 backdrop-blur">
             <div className="mx-auto max-w-3xl px-4 py-3">
-              {/* Linha de modos rápidos + encerrar */}
+              {/* Linha de modos rápidos */}
               <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
                 <span className="text-[11px] text-muted">Modos rápidos:</span>
-                <button
-                  type="button"
-                  onClick={() => insertPrefix("Paciente:")}
-                  className="rounded-2xl border border-app px-2 py-1 text-[11px] font-semibold hover:opacity-80"
-                >
-                  Paciente:
-                </button>
+
                 <button
                   type="button"
                   onClick={() => insertPrefix("Equipe:")}
@@ -271,6 +264,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
                 >
                   Equipe:
                 </button>
+
                 <button
                   type="button"
                   onClick={() => insertPrefix("Licença:")}
@@ -278,6 +272,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
                 >
                   Licença:
                 </button>
+
                 <button
                   type="button"
                   onClick={() => insertPrefix("Tutor:")}
@@ -307,7 +302,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
                       void send();
                     }
                   }}
-                  placeholder="Digite sua mensagem… (Paciente:, Equipe:, Licença:, Tutor:)"
+                  placeholder="Digite sua mensagem… (Equipe:, Licença:, Tutor:)"
                   className="input-app w-full flex-1 rounded-2xl border px-3 py-2 text-sm outline-none"
                   disabled={sending}
                 />
