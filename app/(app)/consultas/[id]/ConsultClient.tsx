@@ -37,7 +37,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
   const [finalizing, setFinalizing] = useState(false);
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [text, setText] = useState("");
-  const [bootstrapped, setBootstrapped] = useState(false); // controla o auto-start da consulta
+  const [bootstrapped, setBootstrapped] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -69,7 +69,6 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
   const title = useMemo(() => session?.case?.title ?? "Consulta", [session]);
 
-  // envia mensagem (pode ser do usuário ou automática)
   async function send(customContent?: string) {
     const raw = customContent ?? text;
     const content = raw.trim();
@@ -77,7 +76,6 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
     setSending(true);
     if (!customContent) {
-      // só limpa o input quando foi o usuário que digitou
       setText("");
     }
 
@@ -89,7 +87,6 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
       });
 
       if (!res.ok) {
-        // se der erro, devolve o texto para o input apenas quando foi mensagem do usuário
         if (!customContent) {
           setText(content);
         }
@@ -104,6 +101,15 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
   async function finalize() {
     if (finalizing) return;
+
+    // confirmação amigável antes de encerrar
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(
+        "Tem certeza que deseja encerrar este caso e enviar para coordenação?"
+      );
+      if (!confirmed) return;
+    }
+
     setFinalizing(true);
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/finalize`, {
@@ -115,8 +121,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
     }
   }
 
-  // AUTO-START: ao abrir a sessão, se ainda não existe resposta da IA (PATIENT_AI),
-  // mandamos uma mensagem padrão "Paciente: iniciar consulta"
+  // auto-start: dispara a primeira mensagem para trazer triagem e instruções
   useEffect(() => {
     if (!session) return;
     if (bootstrapped) return;
@@ -130,11 +135,9 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
     }
   }, [session, bootstrapped, sending]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // insere prefixos de modo no campo de texto
   function insertPrefix(prefix: "Equipe:" | "Licença:" | "Tutor:") {
     setText((prev) => {
       const trimmed = prev.trimStart();
-
       const existingPrefixes = ["Paciente:", "Equipe:", "Licença:", "Tutor:"] as const;
       const found = existingPrefixes.find((p) => trimmed.startsWith(p));
 
@@ -186,7 +189,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
   return (
     <div className="flex min-h-screen justify-center">
       <div className="flex w-full max-w-3xl flex-col px-4 pt-4 pb-24">
-        {/* Cabeçalho topo do chat */}
+        {/* Cabeçalho */}
         <div className="surface-strong rounded-2xl p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -211,7 +214,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
           </div>
         </div>
 
-        {/* Área de mensagens estilo WhatsApp */}
+        {/* Área de mensagens */}
         <div className="mt-4 flex-1 space-y-3 overflow-y-auto pb-24 pr-1">
           {session.messages.map((m) => {
             const isMe = m.role === "STUDENT";
@@ -249,11 +252,11 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
           </div>
         )}
 
-        {/* Barra de input fixa embaixo, com modos rápidos acima do campo */}
+        {/* Input + modos rápidos */}
         {session.status === "IN_PROGRESS" && (
           <div className="fixed inset-x-0 bottom-0 border-t border-[var(--border)] bg-card-strong/95 backdrop-blur">
             <div className="mx-auto max-w-3xl px-4 py-3">
-              {/* Linha de modos rápidos */}
+              {/* Modos rápidos + encerrar na mesma linha */}
               <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
                 <span className="text-[11px] text-muted">Modos rápidos:</span>
 
@@ -287,11 +290,11 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
                   disabled={finalizing}
                   className="ml-auto rounded-2xl border border-app px-3 py-1 text-[11px] font-semibold hover:opacity-80 disabled:opacity-60"
                 >
-                  {finalizing ? "Finalizando…" : "Encerrar caso"}
+                  {finalizing ? "Finalizando…" : "Encerrar"}
                 </button>
               </div>
 
-              {/* Input de mensagem */}
+              {/* Campo de mensagem */}
               <div className="flex items-center gap-2">
                 <input
                   value={text}
