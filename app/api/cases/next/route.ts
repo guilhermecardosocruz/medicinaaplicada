@@ -11,7 +11,6 @@ type CasePayload = {
   blueprint?: unknown; // Json
 };
 
-
 function asInputJsonValue(v: unknown): Prisma.InputJsonValue | undefined {
   // Prisma aceita apenas JsonValue: string | number | boolean | null | JsonObject | JsonArray
   if (v === null) return undefined;
@@ -45,15 +44,53 @@ export async function POST(req: NextRequest) {
   const openai = getOpenAIClient();
   const model = getOpenAIModel();
 
+  // 1) Buscar últimos casos já criados (para evitar repetir a mesma história)
+  const recentCases = await prisma.case.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 8,
+    select: {
+      title: true,
+      triage: true,
+      seed: true,
+    },
+  });
+
+  const recentCasesSummary = recentCases
+    .map((c, index) => {
+      const seedPreview =
+        c.seed.length > 220 ? c.seed.slice(0, 220).replace(/\s+/g, " ") + "..." : c.seed.replace(/\s+/g, " ");
+      return `Caso ${index + 1}: titulo="${c.title}", triagem="${c.triage ?? "N/A"}", seedResumo="${seedPreview}"`;
+    })
+    .join("\n");
+
+  const diversityBlock = recentCases.length
+    ? `
+Casos recentes já gerados (NÃO repita a mesma história nem o mesmo roteiro clínico):
+
+${recentCasesSummary}
+
+Você DEVE gerar um novo caso que seja clinicamente distinto destes em pelo menos UM dos aspectos abaixo:
+- queixa principal (chiefComplaint)
+- faixa etária do paciente
+- contexto social / profissional
+- nível de risco (BAIXA / MEDIA / ALTA) ou gravidade da apresentação inicial
+
+Evite copiar literalmente estrutura, falas, sinais vitais ou sequência de exames desses casos.`
+    : `
+Ainda não há casos prévios registrados neste sistema.
+Você pode gerar qualquer caso dentro das regras abaixo.`;
+
   const system = `
 Você é um gerador de casos clínicos para simulação com estudantes de medicina.
 Retorne APENAS JSON válido, sem markdown, sem texto extra.
 
 Objetivo: gerar um caso com "blueprint" estruturado para reduzir chamadas futuras.
 
-Regras:
+${diversityBlock}
+
+Regras gerais do caso:
 - Caso realista (ambulatorial/UPA leve para MVP), linguagem leiga do paciente.
-- Não entregue diagnóstico final.
+- Não entregue diagnóstico final explícito.
 - "seed" descreve persona + contexto + sintomas + histórico curto + sinais de alarme (se houver).
 - "title" curto (ex: "Dor abdominal e náuseas").
 - "triage" opcional (ex: "Baixa", "Média", "Alta").
@@ -126,7 +163,8 @@ Importante:
 - Coerência: sinais vitais, triagem, exame físico e exames devem ser plausíveis e coerentes.
 - Se "sex" = "M", "bhcg" deve ser "não aplicável" ou similar.
 - "gynUro" pode ser null quando não aplicável.
-Formato final:
+
+Formato final OBRIGATÓRIO:
 {"title":"...","triage":"...","seed":"...","blueprint":{...}}
 `.trim();
 
@@ -138,7 +176,7 @@ Formato final:
       {
         role: "user",
         content:
-          "Gere 1 caso para atendimento (MVP) com blueprint completo para triagem, exame físico e exames.",
+          "Gere 1 caso para atendimento (MVP) com blueprint completo para triagem, exame físico e exames, diferente dos casos recentes listados acima.",
       },
     ],
   });
