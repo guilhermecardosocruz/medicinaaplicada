@@ -37,12 +37,16 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
   const [finalizing, setFinalizing] = useState(false);
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [text, setText] = useState("");
+  const [showActions, setShowActions] = useState(false);
+
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, { cache: "no-store" });
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
+        cache: "no-store",
+      });
       if (!res.ok) {
         setSession(null);
         return;
@@ -94,7 +98,9 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
     if (finalizing) return;
     setFinalizing(true);
     try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/finalize`, { method: "POST" });
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/finalize`, {
+        method: "POST",
+      });
       if (res.ok) await load();
     } finally {
       setFinalizing(false);
@@ -122,7 +128,11 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
   }
 
   const statusLabel =
-    session.status === "IN_PROGRESS" ? "Em andamento" : session.status === "WAITING_EVAL" ? "Avaliando" : "Finalizado";
+    session.status === "IN_PROGRESS"
+      ? "Em andamento"
+      : session.status === "WAITING_EVAL"
+      ? "Avaliando"
+      : "Finalizado";
 
   const phaseLabel =
     session.phase === "TRIAGE"
@@ -134,91 +144,127 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
       : "Encerrado";
 
   return (
-    <div className="mx-auto max-w-3xl px-4 pb-24 pt-6">
-      <div className="surface-strong p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-sm font-semibold">{title}</div>
-            <div className="mt-1 text-xs text-muted">
-              Status: {statusLabel} • Fase: {phaseLabel}
-              {session.case.triage ? ` • Triagem: ${session.case.triage}` : ""}
+    <div className="flex min-h-screen justify-center">
+      <div className="flex w-full max-w-3xl flex-col px-4 pt-4 pb-24">
+        {/* Cabeçalho fixo no topo do “chat” */}
+        <div className="surface-strong rounded-2xl p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold">{title}</div>
+              <div className="mt-1 text-xs text-muted">
+                Status: {statusLabel} • Fase: {phaseLabel}
+                {session.case.triage ? ` • Triagem: ${session.case.triage}` : ""}
+              </div>
             </div>
+
+            {session.status === "IN_PROGRESS" && (
+              <div className="hidden items-center gap-2 sm:flex">
+                <button
+                  onClick={finalize}
+                  disabled={finalizing}
+                  className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80 disabled:opacity-60"
+                >
+                  {finalizing ? "Finalizando…" : "Encerrar caso e chamar coordenação"}
+                </button>
+              </div>
+            )}
           </div>
-
-          {session.status === "IN_PROGRESS" && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={finalize}
-                disabled={finalizing}
-                className="rounded-xl border border-app px-3 py-2 text-xs font-semibold hover:opacity-80 disabled:opacity-60"
-              >
-                {finalizing ? "Finalizando…" : "Encerrar caso e chamar coordenação"}
-              </button>
-            </div>
-          )}
         </div>
-      </div>
 
-      <div className="mt-4 space-y-3">
-        {session.messages.map((m) => {
-          const isMe = m.role === "STUDENT";
-          const isSystem = m.role === "SYSTEM";
-          const bubble =
-            isSystem
-              ? "surface px-3 py-2 text-xs text-muted"
+        {/* Área de mensagens estilo Whats: ocupa o restante da tela, rola, e as mensagens “sobem” */}
+        <div className="mt-4 flex-1 space-y-3 overflow-y-auto pb-24 pr-1">
+          {session.messages.map((m) => {
+            const isMe = m.role === "STUDENT";
+            const isSystem = m.role === "SYSTEM";
+            const bubble = isSystem
+              ? "surface px-3 py-2 text-xs text-muted rounded-xl"
               : isMe
               ? "ml-auto max-w-[85%] rounded-2xl bg-card-strong border border-app px-3 py-2 text-sm"
               : "mr-auto max-w-[85%] rounded-2xl bg-card border border-app px-3 py-2 text-sm";
 
-          return (
-            <div key={m.id} className={isSystem ? "" : isMe ? "flex justify-end" : "flex justify-start"}>
-              <div className={bubble} style={{ whiteSpace: "pre-wrap" }}>
-                {m.content}
+            return (
+              <div key={m.id} className={isSystem ? "flex justify-center" : isMe ? "flex justify-end" : "flex justify-start"}>
+                <div className={bubble} style={{ whiteSpace: "pre-wrap" }}>
+                  {m.content}
+                </div>
+              </div>
+            );
+          })}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Avaliação do coordenador (aparece abaixo do chat, quando DONE) */}
+        {session.status === "DONE" && session.evaluation && (
+          <div className="mt-4 surface rounded-2xl p-4">
+            <div className="text-sm font-semibold">Avaliação do coordenador</div>
+            <div className="mt-2 text-sm">
+              Nota: <span className="font-semibold">{session.evaluation.score}/10</span>
+            </div>
+            <div className="mt-2 text-sm text-muted" style={{ whiteSpace: "pre-wrap" }}>
+              {session.evaluation.feedback}
+            </div>
+          </div>
+        )}
+
+        {/* Barra de input fixa na parte de baixo, com botão de ações ao lado do campo (estilo Whats + menu) */}
+        {session.status === "IN_PROGRESS" && (
+          <div className="fixed inset-x-0 bottom-0 border-t border-[var(--border)] bg-card-strong/95 backdrop-blur">
+            <div className="relative mx-auto max-w-3xl px-4 py-3">
+              {/* Menu de ações (encerrar, etc.) */}
+              {showActions && (
+                <div className="absolute bottom-14 right-4 z-20 w-64 rounded-2xl border border-app bg-card shadow-xl">
+                  <div className="px-3 py-2 text-xs font-semibold text-muted">Ações da consulta</div>
+                  <button
+                    onClick={() => {
+                      setShowActions(false);
+                      void finalize();
+                    }}
+                    disabled={finalizing}
+                    className="flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-card-strong disabled:opacity-60"
+                  >
+                    <span>Encerrar caso e chamar coordenação</span>
+                    <span className="text-xs text-muted">⇧</span>
+                  </button>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                {/* Botão de ações (tipo menu) */}
+                <button
+                  type="button"
+                  onClick={() => setShowActions((prev) => !prev)}
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-app text-xl font-semibold hover:opacity-80"
+                >
+                  +
+                </button>
+
+                {/* Campo de digitação, colado no rodapé, estilo Whats */}
+                <input
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void send();
+                    }
+                  }}
+                  placeholder="Digite sua mensagem… (Paciente:, Equipe:, Licença:, Tutor:)"
+                  className="input-app w-full flex-1 rounded-2xl border px-3 py-2 text-sm outline-none"
+                  disabled={sending}
+                />
+
+                <button
+                  onClick={() => void send()}
+                  disabled={sending || !text.trim()}
+                  className="rounded-2xl border border-app px-4 py-2 text-sm font-semibold hover:opacity-80 disabled:opacity-60"
+                >
+                  {sending ? "…" : "Enviar"}
+                </button>
               </div>
             </div>
-          );
-        })}
-        <div ref={bottomRef} />
+          </div>
+        )}
       </div>
-
-      {session.status === "DONE" && session.evaluation && (
-        <div className="mt-6 surface p-4">
-          <div className="text-sm font-semibold">Avaliação do coordenador</div>
-          <div className="mt-2 text-sm">
-            Nota: <span className="font-semibold">{session.evaluation.score}/10</span>
-          </div>
-          <div className="mt-2 text-sm text-muted" style={{ whiteSpace: "pre-wrap" }}>
-            {session.evaluation.feedback}
-          </div>
-        </div>
-      )}
-
-      {session.status === "IN_PROGRESS" && (
-        <div className="fixed inset-x-0 bottom-0 border-t border-[var(--border)] bg-card-strong backdrop-blur">
-          <div className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-3">
-            <input
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void send();
-                }
-              }}
-              placeholder="Digite sua mensagem…"
-              className="input-app w-full rounded-2xl border px-3 py-2 text-sm outline-none"
-              disabled={sending}
-            />
-            <button
-              onClick={() => void send()}
-              disabled={sending || !text.trim()}
-              className="rounded-2xl border border-app px-4 py-2 text-sm font-semibold hover:opacity-80 disabled:opacity-60"
-            >
-              {sending ? "…" : "Enviar"}
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
