@@ -38,6 +38,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [text, setText] = useState("");
   const [showActions, setShowActions] = useState(false);
+  const [bootstrapped, setBootstrapped] = useState(false); // controla o auto-start da consulta
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -69,11 +70,17 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
   const title = useMemo(() => session?.case?.title ?? "Consulta", [session]);
 
-  async function send() {
-    const content = text.trim();
+  // send agora aceita um conteúdo customizado (usado no auto-start)
+  async function send(customContent?: string) {
+    const raw = customContent ?? text;
+    const content = raw.trim();
     if (!content || sending) return;
+
     setSending(true);
-    setText("");
+    if (!customContent) {
+      // só limpa o input quando foi o usuário que digitou
+      setText("");
+    }
 
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
@@ -83,8 +90,10 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
       });
 
       if (!res.ok) {
-        // se der erro, devolve o texto para o input
-        setText(content);
+        // se der erro, devolve o texto para o input apenas quando foi mensagem do usuário
+        if (!customContent) {
+          setText(content);
+        }
         return;
       }
 
@@ -106,6 +115,22 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
       setFinalizing(false);
     }
   }
+
+  // AUTO-START: ao abrir a sessão, se ainda não existe resposta da IA (PATIENT_AI),
+  // mandamos uma mensagem padrão "Paciente: iniciar consulta"
+  useEffect(() => {
+    if (!session) return;
+    if (bootstrapped) return;
+    if (sending) return;
+
+    const hasPatientAI = session.messages.some((m) => m.role === "PATIENT_AI");
+
+    if (session.status === "IN_PROGRESS" && !hasPatientAI) {
+      setBootstrapped(true);
+      // mensagem padrão para disparar a primeira resposta com TRIAGEM + modos
+      void send("Paciente: iniciar consulta");
+    }
+  }, [session, bootstrapped, sending]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return <div className="mx-auto max-w-3xl px-4 py-8 text-sm text-muted">Carregando…</div>;
@@ -146,7 +171,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
   return (
     <div className="flex min-h-screen justify-center">
       <div className="flex w-full max-w-3xl flex-col px-4 pt-4 pb-24">
-        {/* Cabeçalho fixo no topo do “chat” */}
+        {/* Cabeçalho topo do chat */}
         <div className="surface-strong rounded-2xl p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -171,7 +196,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
           </div>
         </div>
 
-        {/* Área de mensagens estilo Whats: ocupa o restante da tela, rola, e as mensagens “sobem” */}
+        {/* Área de mensagens estilo WhatsApp */}
         <div className="mt-4 flex-1 space-y-3 overflow-y-auto pb-24 pr-1">
           {session.messages.map((m) => {
             const isMe = m.role === "STUDENT";
@@ -193,7 +218,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
           <div ref={bottomRef} />
         </div>
 
-        {/* Avaliação do coordenador (aparece abaixo do chat, quando DONE) */}
+        {/* Avaliação do coordenador */}
         {session.status === "DONE" && session.evaluation && (
           <div className="mt-4 surface rounded-2xl p-4">
             <div className="text-sm font-semibold">Avaliação do coordenador</div>
@@ -206,11 +231,11 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
           </div>
         )}
 
-        {/* Barra de input fixa na parte de baixo, com botão de ações ao lado do campo (estilo Whats + menu) */}
+        {/* Barra de input fixa embaixo, com menu de ações */}
         {session.status === "IN_PROGRESS" && (
           <div className="fixed inset-x-0 bottom-0 border-t border-[var(--border)] bg-card-strong/95 backdrop-blur">
             <div className="relative mx-auto max-w-3xl px-4 py-3">
-              {/* Menu de ações (encerrar, etc.) */}
+              {/* Menu de ações */}
               {showActions && (
                 <div className="absolute bottom-14 right-4 z-20 w-64 rounded-2xl border border-app bg-card shadow-xl">
                   <div className="px-3 py-2 text-xs font-semibold text-muted">Ações da consulta</div>
@@ -229,7 +254,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
               )}
 
               <div className="flex items-center gap-2">
-                {/* Botão de ações (tipo menu) */}
+                {/* Botão de ações (menu) */}
                 <button
                   type="button"
                   onClick={() => setShowActions((prev) => !prev)}
@@ -238,7 +263,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
                   +
                 </button>
 
-                {/* Campo de digitação, colado no rodapé, estilo Whats */}
+                {/* Input de mensagem */}
                 <input
                   value={text}
                   onChange={(e) => setText(e.target.value)}
