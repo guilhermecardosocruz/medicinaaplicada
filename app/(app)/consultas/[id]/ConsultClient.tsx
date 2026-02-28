@@ -37,7 +37,6 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
   const [finalizing, setFinalizing] = useState(false);
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [text, setText] = useState("");
-  const [showActions, setShowActions] = useState(false);
   const [bootstrapped, setBootstrapped] = useState(false); // controla o auto-start da consulta
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -70,7 +69,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
   const title = useMemo(() => session?.case?.title ?? "Consulta", [session]);
 
-  // send agora aceita um conteúdo customizado (usado no auto-start)
+  // envia mensagem (pode ser do usuário ou automática)
   async function send(customContent?: string) {
     const raw = customContent ?? text;
     const content = raw.trim();
@@ -127,10 +126,27 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
     if (session.status === "IN_PROGRESS" && !hasPatientAI) {
       setBootstrapped(true);
-      // mensagem padrão para disparar a primeira resposta com TRIAGEM + modos
       void send("Paciente: iniciar consulta");
     }
   }, [session, bootstrapped, sending]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // insere prefixos de modo no campo de texto
+  function insertPrefix(prefix: "Paciente:" | "Equipe:" | "Licença:" | "Tutor:") {
+    setText((prev) => {
+      const trimmed = prev.trimStart();
+
+      // se já começa com um dos prefixos, substitui pelo novo
+      const existingPrefixes = ["Paciente:", "Equipe:", "Licença:", "Tutor:"] as const;
+      const found = existingPrefixes.find((p) => trimmed.startsWith(p));
+
+      const rest =
+        found != null
+          ? trimmed.slice(found.length).replace(/^(\s)+/, "")
+          : trimmed;
+
+      return `${prefix} ${rest}`.trimEnd() + (rest ? "" : " ");
+    });
+  }
 
   if (loading) {
     return <div className="mx-auto max-w-3xl px-4 py-8 text-sm text-muted">Carregando…</div>;
@@ -208,7 +224,10 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
               : "mr-auto max-w-[85%] rounded-2xl bg-card border border-app px-3 py-2 text-sm";
 
             return (
-              <div key={m.id} className={isSystem ? "flex justify-center" : isMe ? "flex justify-end" : "flex justify-start"}>
+              <div
+                key={m.id}
+                className={isSystem ? "flex justify-center" : isMe ? "flex justify-end" : "flex justify-start"}
+              >
                 <div className={bubble} style={{ whiteSpace: "pre-wrap" }}>
                   {m.content}
                 </div>
@@ -231,39 +250,54 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
           </div>
         )}
 
-        {/* Barra de input fixa embaixo, com menu de ações */}
+        {/* Barra de input fixa embaixo, com modos rápidos acima do campo */}
         {session.status === "IN_PROGRESS" && (
           <div className="fixed inset-x-0 bottom-0 border-t border-[var(--border)] bg-card-strong/95 backdrop-blur">
-            <div className="relative mx-auto max-w-3xl px-4 py-3">
-              {/* Menu de ações */}
-              {showActions && (
-                <div className="absolute bottom-14 right-4 z-20 w-64 rounded-2xl border border-app bg-card shadow-xl">
-                  <div className="px-3 py-2 text-xs font-semibold text-muted">Ações da consulta</div>
-                  <button
-                    onClick={() => {
-                      setShowActions(false);
-                      void finalize();
-                    }}
-                    disabled={finalizing}
-                    className="flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-card-strong disabled:opacity-60"
-                  >
-                    <span>Encerrar caso e chamar coordenação</span>
-                    <span className="text-xs text-muted">⇧</span>
-                  </button>
-                </div>
-              )}
-
-              <div className="flex items-center gap-2">
-                {/* Botão de ações (menu) */}
+            <div className="mx-auto max-w-3xl px-4 py-3">
+              {/* Linha de modos rápidos + encerrar */}
+              <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-[11px] text-muted">Modos rápidos:</span>
                 <button
                   type="button"
-                  onClick={() => setShowActions((prev) => !prev)}
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-app text-xl font-semibold hover:opacity-80"
+                  onClick={() => insertPrefix("Paciente:")}
+                  className="rounded-2xl border border-app px-2 py-1 text-[11px] font-semibold hover:opacity-80"
                 >
-                  +
+                  Paciente:
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertPrefix("Equipe:")}
+                  className="rounded-2xl border border-app px-2 py-1 text-[11px] font-semibold hover:opacity-80"
+                >
+                  Equipe:
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertPrefix("Licença:")}
+                  className="rounded-2xl border border-app px-2 py-1 text-[11px] font-semibold hover:opacity-80"
+                >
+                  Licença:
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertPrefix("Tutor:")}
+                  className="rounded-2xl border border-app px-2 py-1 text-[11px] font-semibold hover:opacity-80"
+                >
+                  Tutor:
                 </button>
 
-                {/* Input de mensagem */}
+                <button
+                  type="button"
+                  onClick={() => void finalize()}
+                  disabled={finalizing}
+                  className="ml-auto rounded-2xl border border-app px-3 py-1 text-[11px] font-semibold hover:opacity-80 disabled:opacity-60"
+                >
+                  {finalizing ? "Finalizando…" : "Encerrar caso"}
+                </button>
+              </div>
+
+              {/* Input de mensagem */}
+              <div className="flex items-center gap-2">
                 <input
                   value={text}
                   onChange={(e) => setText(e.target.value)}
