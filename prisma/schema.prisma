@@ -69,7 +69,6 @@ model ConsultSession {
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
-  // Estado estruturado da sessão (o que já foi coletado/revelado)
   triageData   Json?
   physicalData Json?
   orders       Json?
@@ -113,12 +112,30 @@ model ConsultMemory {
 model Evaluation {
   id           String   @id @default(cuid())
   sessionId    String   @unique
+
+  // SCORE ANTIGO (mantido)
   score        Int
   strengths    Json?
   weaknesses   Json?
   improvements Json?
   feedback     String
-  createdAt    DateTime @default(now())
+
+  // 🔥 NOVO BLOCO CLÍNICO
+  studentDiagnosis       String?
+  clinicalJustification  String?
+  correctDiagnosis       String?
+  diagnosisCorrect       Boolean?
+
+  // 🔥 CRITÉRIOS
+  communication Int?
+  anamnesis     Int?
+  reasoning     Int?
+  safety        Int?
+  exams         Int?
+  closing       Int?
+  organization  Int?
+
+  createdAt DateTime @default(now())
 
   session ConsultSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }

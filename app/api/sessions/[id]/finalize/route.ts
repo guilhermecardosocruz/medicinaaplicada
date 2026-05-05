@@ -3,37 +3,35 @@ import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/session";
 import { getOpenAIClient, getOpenAIModel } from "@/lib/openai";
 
-type EvalJson = {
-  score: number;
-  feedback: string;
+type EvalResponse = {
+  score?: number;
   strengths?: string[];
   weaknesses?: string[];
   improvements?: string[];
+
+  communication?: number;
+  anamnesis?: number;
+  reasoning?: number;
+  safety?: number;
+  exams?: number;
+  closing?: number;
+  organization?: number;
+
+  feedback?: string;
 };
 
-function safeJsonParse(text: string): unknown {
+function safeJsonParse(text: string): EvalResponse | null {
   try {
     return JSON.parse(text);
   } catch {
-    const start = text.indexOf("{");
-    const end = text.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      try {
-        return JSON.parse(text.slice(start, end + 1));
-      } catch {
-        return null;
-      }
-    }
     return null;
   }
 }
 
-function compactJson(v: unknown) {
-  try {
-    return JSON.stringify(v);
-  } catch {
-    return "";
-  }
+function getCorrectDiagnosis(blueprint: unknown): string {
+  if (!blueprint || typeof blueprint !== "object") return "Não informado";
+  const bp = blueprint as Record<string, unknown>;
+  return typeof bp.diagnosis === "string" ? bp.diagnosis : "Não informado";
 }
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -44,120 +42,100 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   const session = await prisma.consultSession.findFirst({
     where: { id, userId: me.id },
-    select: {
-      id: true,
-      status: true,
-      phase: true,
-      triageData: true,
-      physicalData: true,
-      orders: true,
-      results: true,
-      followup: true,
-      case: { select: { title: true } },
-      messages: { orderBy: { createdAt: "asc" }, select: { role: true, content: true } },
-      evaluation: { select: { id: true } },
+    include: {
+      case: true,
+      messages: true,
+      evaluation: true,
     },
   });
 
   if (!session) return NextResponse.json({ ok: false }, { status: 404 });
-  if (session.evaluation) return NextResponse.json({ ok: false, message: "Sessão já avaliada." }, { status: 400 });
 
-  await prisma.consultSession.update({
-    where: { id: session.id },
-    data: { status: "WAITING_EVAL", phase: "FINALIZED" },
-  });
+  if (!session.evaluation) {
+    return NextResponse.json(
+      { ok: false, message: "Diagnóstico ainda não informado" },
+      { status: 400 }
+    );
+  }
 
-  // Resumo estruturado (pra coordenação avaliar com menos token)
-  const structuredSummary = [
-    session.triageData ? `TRIAGEM=${compactJson(session.triageData)}` : "",
-    session.physicalData ? `EXAME_FISICO=${compactJson(session.physicalData)}` : "",
-    session.orders ? `EXAMES_SOLICITADOS=${compactJson(session.orders)}` : "",
-    session.results ? `RESULTADOS=${compactJson(session.results)}` : "",
-    session.followup ? `RETORNO=${compactJson(session.followup)}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  // Também envia uma transcrição curta (últimas 20 mensagens) pra não perder contexto do raciocínio
-  const tail = session.messages.slice(-20);
-  const transcript = tail
-    .map((m) => {
-      const who =
-        m.role === "STUDENT" ? "ALUNO" :
-        m.role === "PATIENT_AI" ? "PACIENTE" :
-        m.role === "COORDINATOR_AI" ? "COORDENADOR" : "SISTEMA";
-      return `${who}: ${m.content}`;
-    })
+  const transcript = session.messages
+    .slice(-20)
+    .map((m) => `${m.role}: ${m.content}`)
     .join("\n");
 
   const system = `
-Você é um COORDENADOR avaliando uma consulta simulada de estudante de medicina.
-Retorne APENAS JSON válido, sem markdown, sem texto extra.
+Avalie a consulta clínica.
 
-Critérios (nota 0-10):
-- Acolhimento e comunicação
-- Anamnese (perguntas relevantes)
-- Organização do raciocínio
-- Segurança do paciente (red flags, orientação responsável)
-- Uso adequado de exame físico e exames
-- Encerramento (resumo e próximos passos)
+REGRAS:
+- Exames NÃO são obrigatórios.
+- Só penalize se eram ESSENCIAIS e não foram usados.
+- Valorize raciocínio clínico.
 
-Formato:
+Retorne JSON:
 {
-  "score": 0-10,
-  "feedback": "texto curto e objetivo",
-  "strengths": ["..."],
-  "weaknesses": ["..."],
-  "improvements": ["..."]
+  "communication": 0 ou 1,
+  "anamnesis": 0 ou 1,
+  "reasoning": 0 ou 1,
+  "safety": 0 ou 1,
+  "exams": 0 ou 1,
+  "closing": 0 ou 1,
+  "organization": 0 ou 1,
+  "feedback": "texto",
+  "strengths": [],
+  "weaknesses": [],
+  "improvements": []
 }
 `.trim();
 
   const openai = getOpenAIClient();
-  const model = getOpenAIModel();
 
   const completion = await openai.chat.completions.create({
-    model,
-    temperature: 0.3,
+    model: getOpenAIModel(),
     messages: [
       { role: "system", content: system },
-      {
-        role: "user",
-        content:
-          `Caso: ${session.case.title}\n\nResumo estruturado:\n${structuredSummary || "(vazio)"}\n\nTranscrição (últimas mensagens):\n${transcript}`,
-      },
+      { role: "user", content: transcript },
     ],
   });
 
-  const text = completion.choices[0]?.message?.content ?? "";
-  const parsed = safeJsonParse(text) as Partial<EvalJson> | null;
+  const parsed = safeJsonParse(completion.choices[0]?.message?.content || "");
 
-  const scoreRaw = parsed?.score;
-  const score =
-    typeof scoreRaw === "number" && Number.isFinite(scoreRaw)
-      ? Math.max(0, Math.min(10, Math.round(scoreRaw)))
-      : 0;
+  const correctDiagnosis = getCorrectDiagnosis(session.case.blueprint);
+  const studentDiagnosis = session.evaluation.studentDiagnosis || "";
 
-  const feedback = typeof parsed?.feedback === "string" ? parsed.feedback.trim() : "Avaliação indisponível.";
-  const strengths = Array.isArray(parsed?.strengths) ? parsed?.strengths.filter((s) => typeof s === "string") : [];
-  const weaknesses = Array.isArray(parsed?.weaknesses) ? parsed?.weaknesses.filter((s) => typeof s === "string") : [];
-  const improvements = Array.isArray(parsed?.improvements) ? parsed?.improvements.filter((s) => typeof s === "string") : [];
+  const diagnosisCorrect =
+    studentDiagnosis.toLowerCase().includes(correctDiagnosis.toLowerCase());
 
-  await prisma.evaluation.create({
+  const criteriaScore =
+    (parsed?.communication || 0) +
+    (parsed?.anamnesis || 0) +
+    (parsed?.reasoning || 0) +
+    (parsed?.safety || 0) +
+    (parsed?.exams || 0) +
+    (parsed?.closing || 0) +
+    (parsed?.organization || 0);
+
+  const finalScore = criteriaScore + (diagnosisCorrect ? 3 : 0);
+
+  await prisma.evaluation.update({
+    where: { sessionId: session.id },
     data: {
-      sessionId: session.id,
-      score,
-      feedback,
-      strengths,
-      weaknesses,
-      improvements,
-    },
-  });
+      communication: parsed?.communication ?? null,
+      anamnesis: parsed?.anamnesis ?? null,
+      reasoning: parsed?.reasoning ?? null,
+      safety: parsed?.safety ?? null,
+      exams: parsed?.exams ?? null,
+      closing: parsed?.closing ?? null,
+      organization: parsed?.organization ?? null,
 
-  await prisma.message.create({
-    data: {
-      sessionId: session.id,
-      role: "COORDINATOR_AI",
-      content: `Nota: ${score}/10\n\n${feedback}`,
+      correctDiagnosis,
+      diagnosisCorrect,
+
+      score: finalScore,
+
+      feedback: parsed?.feedback || "",
+      strengths: parsed?.strengths || [],
+      weaknesses: parsed?.weaknesses || [],
+      improvements: parsed?.improvements || [],
     },
   });
 
@@ -166,5 +144,5 @@ Formato:
     data: { status: "DONE" },
   });
 
-  return NextResponse.json({ ok: true, score }, { status: 200 });
+  return NextResponse.json({ ok: true, score: finalScore });
 }
