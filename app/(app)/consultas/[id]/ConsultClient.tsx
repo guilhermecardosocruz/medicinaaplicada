@@ -15,42 +15,18 @@ type SessionPayload = {
   status: "IN_PROGRESS" | "WAITING_EVAL" | "DONE";
   phase: "TRIAGE" | "CONSULT" | "FOLLOWUP" | "FINALIZED";
   case: { title: string; triage: string | null };
-  triageData?: unknown;
-  physicalData?: unknown;
-  orders?: unknown;
-  results?: unknown;
-  followup?: unknown;
   messages: Msg[];
-  evaluation?: {
-    score: number;
-    feedback: string;
-    strengths: unknown;
-    weaknesses: unknown;
-    improvements: unknown;
-    studentDiagnosis?: string;
-    clinicalJustification?: string;
-    correctDiagnosis?: string;
-    diagnosisCorrect?: boolean;
-    communication?: number;
-    anamnesis?: number;
-    reasoning?: number;
-    safety?: number;
-    exams?: number;
-    closing?: number;
-    organization?: number;
-  } | null;
+  evaluation?: any;
 };
 
 export default function ConsultClient({ sessionId }: { sessionId: string }) {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
-  const [finalizing, setFinalizing] = useState(false);
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
   const [bootstrapped, setBootstrapped] = useState(false);
 
-  // 🔥 NOVO
   const [showDiag, setShowDiag] = useState(false);
   const [diagnosis, setDiagnosis] = useState("");
   const [justification, setJustification] = useState("");
@@ -58,82 +34,46 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   async function load() {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
-        cache: "no-store",
-      });
-      if (!res.ok) {
-        setSession(null);
-        return;
-      }
-      const data = (await res.json()) as { ok: boolean; session: SessionPayload };
-      if (data?.ok) setSession(data.session);
-    } finally {
-      setLoading(false);
-    }
+    const res = await fetch(`/api/sessions/${sessionId}/messages`, { cache: "no-store" });
+    const data = await res.json();
+    if (data.ok) setSession(data.session);
   }
 
-  useEffect(() => {
-    void load();
-  }, [sessionId]);
+  useEffect(() => { load(); }, [sessionId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [session?.messages?.length]);
+  }, [session?.messages]);
 
-  const title = useMemo(() => session?.case?.title ?? "Consulta", [session]);
-
-  async function send(customContent?: string) {
-    const raw = customContent ?? text;
-    const content = raw.trim();
-    if (!content || sending) return;
+  async function send(custom?: string) {
+    const msg = (custom ?? text).trim();
+    if (!msg) return;
 
     setSending(true);
-    if (!customContent) setText("");
 
-    try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
-      });
+    await fetch(`/api/sessions/${sessionId}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: msg }),
+    });
 
-      if (!res.ok) {
-        if (!customContent) setText(content);
-        return;
-      }
-
-      await load();
-    } finally {
-      setSending(false);
-    }
+    setText("");
+    await load();
+    setSending(false);
   }
 
   async function finalize() {
     if (finalizing) return;
-
-    if (typeof window !== "undefined") {
-      const confirmed = window.confirm(
-        "Tem certeza que deseja encerrar este caso e enviar para coordenação?"
-      );
-      if (!confirmed) return;
-    }
-
     setFinalizing(true);
-    try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/finalize`, {
-        method: "POST",
-      });
-      if (res.ok) await load();
-    } finally {
-      setFinalizing(false);
-    }
+
+    await fetch(`/api/sessions/${sessionId}/finalize`, { method: "POST" });
+
+    await load();
+    setFinalizing(false);
   }
 
-  // 🔥 NOVO
   async function saveDiagnosis() {
-    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/diagnosis`, {
+    const res = await fetch(`/api/sessions/${sessionId}/diagnosis`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -146,65 +86,52 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
     if (res.ok) {
       setShowDiag(false);
-      setDiagnosis("");
-      setJustification("");
       await load();
     }
   }
 
+  // AUTO START
   useEffect(() => {
     if (!session) return;
     if (bootstrapped) return;
-    if (sending) return;
 
-    const hasPatientAI = session.messages.some((m) => m.role === "PATIENT_AI");
+    const hasPatient = session.messages.some((m) => m.role === "PATIENT_AI");
 
-    if (session.status === "IN_PROGRESS" && !hasPatientAI) {
+    if (!hasPatient) {
       setBootstrapped(true);
-      void send("Paciente: iniciar consulta");
+      send("Paciente: iniciar consulta");
     }
-  }, [session, bootstrapped, sending]);
+  }, [session]);
 
-  function insertPrefix(prefix: "Equipe:" | "Licença:" | "Tutor:") {
-    setText((prev) => {
-      const trimmed = prev.trimStart();
-      const existingPrefixes = ["Paciente:", "Equipe:", "Licença:", "Tutor:"] as const;
-      const found = existingPrefixes.find((p) => trimmed.startsWith(p));
-
-      const rest =
-        found != null
-          ? trimmed.slice(found.length).replace(/^(\s)+/, "")
-          : trimmed;
-
-      return `${prefix} ${rest}`.trimEnd() + (rest ? "" : " ");
-    });
+  function insert(prefix: "Equipe:" | "Licença:" | "Tutor:") {
+    setText(prefix + " ");
   }
 
-  if (loading) return <div className="p-8 text-sm">Carregando…</div>;
-  if (!session) return <div className="p-8">Sessão não encontrada</div>;
+  if (!session) return null;
 
   return (
     <div className="flex min-h-screen justify-center">
-      <div className="flex w-full max-w-3xl flex-col px-4 pt-4 pb-24">
+      <div className="w-full max-w-3xl px-4 pt-4 pb-32">
 
-        <div className="surface-strong rounded-2xl p-4 flex justify-between">
+        {/* HEADER */}
+        <div className="flex justify-between mb-4">
           <div>
-            <div className="text-sm font-semibold">{title}</div>
-            <div className="text-xs text-muted">{session.status}</div>
+            <div className="font-bold">{session.case.title}</div>
+            <div className="text-xs text-gray-400">{session.status}</div>
           </div>
 
-          {/* 🔥 BOTÃO NOVO */}
-          {session.status === "IN_PROGRESS" && !session.evaluation && (
+          {session.status === "IN_PROGRESS" && (
             <button
               onClick={() => setShowDiag(true)}
-              className="border px-3 py-2 rounded-xl text-xs"
+              className="border px-3 py-2 rounded-xl text-sm"
             >
               Diagnosticar
             </button>
           )}
         </div>
 
-        <div className="mt-4 space-y-3">
+        {/* CHAT */}
+        <div className="space-y-3">
           {session.messages.map((m) => (
             <div key={m.id}>
               <b>{m.role}:</b> {m.content}
@@ -213,53 +140,81 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
           <div ref={bottomRef} />
         </div>
 
-        {session.status === "DONE" && session.evaluation && (
-          <div className="mt-4 border p-4 rounded-xl">
-            <div>Nota: {session.evaluation.score}/10</div>
-            <div>{session.evaluation.feedback}</div>
-          </div>
-        )}
-
+        {/* INPUT FIXED */}
         {session.status === "IN_PROGRESS" && (
-          <div className="fixed bottom-0 w-full max-w-3xl p-4 bg-white">
-            <input
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              className="border w-full p-2"
-            />
-            <button onClick={() => send()}>Enviar</button>
+          <div className="fixed bottom-0 left-0 right-0 bg-[#0b1220] border-t border-gray-700">
+            <div className="max-w-3xl mx-auto p-3">
+
+              {/* BOTÕES */}
+              <div className="flex gap-2 mb-2 text-xs">
+
+                <button onClick={() => insert("Equipe:")} className="px-2 py-1 border rounded">
+                  Equipe
+                </button>
+
+                <button onClick={() => insert("Licença:")} className="px-2 py-1 border rounded">
+                  Licença
+                </button>
+
+                <button onClick={() => insert("Tutor:")} className="px-2 py-1 border rounded">
+                  Tutor
+                </button>
+
+                <button
+                  onClick={finalize}
+                  className="ml-auto px-3 py-1 border rounded"
+                >
+                  Encerrar
+                </button>
+              </div>
+
+              {/* INPUT */}
+              <div className="flex gap-2">
+                <input
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  className="flex-1 p-2 rounded bg-white text-black"
+                  placeholder="Digite sua mensagem..."
+                />
+
+                <button
+                  onClick={() => send()}
+                  className="px-4 py-2 border rounded bg-white text-black"
+                >
+                  Enviar
+                </button>
+              </div>
+
+            </div>
           </div>
         )}
 
-        {/* 🔥 MODAL */}
+        {/* MODAL */}
         {showDiag && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
-            <div className="bg-white p-4 rounded-xl w-full max-w-md space-y-3">
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center">
+            <div className="bg-white p-4 rounded w-full max-w-md">
 
-              <div className="font-semibold">Fechar diagnóstico</div>
+              <div className="font-bold mb-2">Diagnóstico</div>
 
               <input
                 value={diagnosis}
                 onChange={(e) => setDiagnosis(e.target.value)}
+                className="w-full border p-2 mb-2"
                 placeholder="Diagnóstico"
-                className="w-full border p-2 rounded"
               />
 
               <textarea
                 value={justification}
                 onChange={(e) => setJustification(e.target.value)}
-                placeholder="Justificativa clínica"
-                className="w-full border p-2 rounded"
+                className="w-full border p-2 mb-2"
+                placeholder="Justificativa"
               />
 
               <div className="flex gap-2">
-                <button onClick={saveDiagnosis} className="flex-1 border p-2 rounded">
-                  Salvar
-                </button>
-                <button onClick={() => setShowDiag(false)} className="flex-1 border p-2 rounded">
-                  Cancelar
-                </button>
+                <button onClick={saveDiagnosis} className="flex-1 border p-2">Salvar</button>
+                <button onClick={() => setShowDiag(false)} className="flex-1 border p-2">Cancelar</button>
               </div>
+
             </div>
           </div>
         )}
