@@ -10,16 +10,30 @@ type Msg = {
 
 type Evaluation = {
   score: number;
+
   feedback: string;
+
   communication?: number;
+
   anamnesis?: number;
+
   reasoning?: number;
+
   safety?: number;
+
   exams?: number;
+
   closing?: number;
+
   organization?: number;
+
   studentDiagnosis?: string;
+
+  clinicalJustification?: string;
+
   correctDiagnosis?: string;
+
+  diagnosisCorrect?: boolean;
 };
 
 type Session = {
@@ -234,20 +248,61 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
         {session.status === "DONE" && session.evaluation && (
           <div className="mt-6 p-4 bg-white text-black rounded-xl">
-            <div className="font-bold mb-2">
-              Avaliação
+
+            <div className="font-bold text-lg mb-4">
+              Avaliação clínica
             </div>
 
-            <div>
-              Diagnóstico: {session.evaluation.studentDiagnosis}
+            <div className="mb-4">
+              <div className="font-semibold">
+                Diagnóstico informado pelo aluno
+              </div>
+
+              <div>
+                {session.evaluation.studentDiagnosis}
+              </div>
             </div>
 
-            <div>
-              Correto: {session.evaluation.correctDiagnosis}
+            <div className="mb-4">
+              <div className="font-semibold">
+                Justificativa do aluno
+              </div>
+
+              <div className="whitespace-pre-wrap">
+                {session.evaluation.clinicalJustification}
+              </div>
             </div>
 
-            <div className="mt-2 font-semibold">
-              Critérios
+            <div className="mb-4">
+              <div className="font-semibold">
+                Diagnóstico correto
+              </div>
+
+              <div>
+                {session.evaluation.correctDiagnosis}
+              </div>
+            </div>
+
+            <div
+              className={`mb-4 p-3 rounded ${
+                session.evaluation.diagnosisCorrect
+                  ? "bg-green-100"
+                  : "bg-red-100"
+              }`}
+            >
+              <div className="font-semibold mb-1">
+                Resultado diagnóstico
+              </div>
+
+              <div>
+                {session.evaluation.diagnosisCorrect
+                  ? "Parabéns, o diagnóstico está correto."
+                  : "O diagnóstico informado não corresponde ao diagnóstico principal esperado para este caso."}
+              </div>
+            </div>
+
+            <div className="mt-4 font-semibold">
+              Critérios avaliados
             </div>
 
             <div>
@@ -278,13 +333,14 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
               Organização: {session.evaluation.organization}
             </div>
 
-            <div className="mt-3 font-bold">
-              Nota: {session.evaluation.score}/10
+            <div className="mt-4 text-xl font-bold">
+              Nota final: {session.evaluation.score}/10
             </div>
 
-            <div className="text-sm mt-2">
+            <div className="mt-4 whitespace-pre-wrap text-sm">
               {session.evaluation.feedback}
             </div>
+
           </div>
         )}
 
