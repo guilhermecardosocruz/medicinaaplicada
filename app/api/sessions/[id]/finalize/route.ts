@@ -87,26 +87,17 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     session.evaluation.clinicalJustification || "";
 
   const system = `
-Você é um avaliador pedagógico de um simulador clínico médico.
+Você é um avaliador pedagógico médico.
 
 IMPORTANTE:
-- Você DEVE descobrir o diagnóstico correto.
-- Nunca deixe o campo correctDiagnosis vazio.
-- Nunca responda "não informado".
-- Sempre forneça um diagnóstico clínico plausível.
-- Mesmo se o aluno errar completamente, avalie comunicação, anamnese, segurança e organização.
-- O aluno pode ganhar pontos mesmo errando o diagnóstico.
-- Seja pedagógico e justo.
-
-Você deve:
-1) descobrir o diagnóstico correto
-2) avaliar o desempenho do aluno
-3) explicar o raciocínio clínico correto
-4) orientar o que faltou investigar
+- descubra o diagnóstico correto
+- nunca deixe diagnóstico vazio
+- avalie de forma justa
+- o aluno pode ganhar pontos mesmo errando o diagnóstico
 
 Retorne APENAS JSON válido.
 
-Formato obrigatório:
+Formato:
 {
   "communication": 0 ou 1,
   "anamnesis": 0 ou 1,
@@ -116,13 +107,13 @@ Formato obrigatório:
   "closing": 0 ou 1,
   "organization": 0 ou 1,
 
-  "correctDiagnosis": "diagnóstico correto",
+  "correctDiagnosis": "texto",
 
-  "diagnosisExplanation": "explicação do raciocínio clínico correto",
+  "diagnosisExplanation": "texto",
 
-  "studentFeedback": "feedback pedagógico ao estudante",
+  "studentFeedback": "texto",
 
-  "feedback": "resumo final",
+  "feedback": "texto",
 
   "strengths": [],
   "weaknesses": [],
@@ -131,18 +122,16 @@ Formato obrigatório:
 `.trim();
 
   const user = `
-CASO CLÍNICO:
-
+CASO:
 ${session.case.seed}
 
-TRANSCRIÇÃO:
-
+CONSULTA:
 ${transcript}
 
 DIAGNÓSTICO DO ALUNO:
 ${studentDiagnosis}
 
-JUSTIFICATIVA DO ALUNO:
+JUSTIFICATIVA:
 ${studentJustification}
 `.trim();
 
@@ -181,7 +170,7 @@ ${studentJustification}
 
   const correctDiagnosis =
     parsed?.correctDiagnosis?.trim() ||
-    "Diagnóstico clínico não identificado pelo avaliador.";
+    "Diagnóstico clínico não identificado.";
 
   const normalizedStudent =
     studentDiagnosis.toLowerCase().trim();
@@ -208,16 +197,16 @@ ${studentJustification}
   const diagnosisBonus =
     diagnosisCorrect ? 3 : 0;
 
-  const finalScore =
+  const diagnosisScore =
     Math.min(criteriaScore + diagnosisBonus, 10);
 
   const diagnosisExplanation =
     parsed?.diagnosisExplanation?.trim() ||
-    "Sem explicação clínica disponível.";
+    "Sem explicação clínica.";
 
   const studentFeedback =
     parsed?.studentFeedback?.trim() ||
-    "Sem feedback disponível.";
+    "Sem feedback.";
 
   const feedback =
     parsed?.feedback?.trim() ||
@@ -254,7 +243,9 @@ ${feedback}
 
       diagnosisCorrect,
 
-      score: finalScore,
+      diagnosisScore,
+
+      score: diagnosisScore,
 
       feedback: finalFeedback,
 
@@ -272,16 +263,12 @@ ${feedback}
     },
 
     data: {
-      status: "DONE",
+      status: "WAITING_TREATMENT",
     },
   });
 
-  return NextResponse.json(
-    {
-      ok: true,
-      score: finalScore,
-      raw,
-    },
-    { status: 200 },
-  );
+  return NextResponse.json({
+    ok: true,
+    score: diagnosisScore,
+  });
 }

@@ -32,6 +32,7 @@ model PasswordResetToken {
 enum ConsultStatus {
   IN_PROGRESS
   WAITING_EVAL
+  WAITING_TREATMENT
   DONE
 }
 
@@ -113,20 +114,23 @@ model Evaluation {
   id           String   @id @default(cuid())
   sessionId    String   @unique
 
-  // SCORE ANTIGO (mantido)
   score        Int
   strengths    Json?
   weaknesses   Json?
   improvements Json?
   feedback     String
 
-  // 🔥 NOVO BLOCO CLÍNICO
-  studentDiagnosis       String?
-  clinicalJustification  String?
-  correctDiagnosis       String?
-  diagnosisCorrect       Boolean?
+  studentDiagnosis      String?
+  clinicalJustification String?
+  correctDiagnosis      String?
+  diagnosisCorrect      Boolean?
 
-  // 🔥 CRITÉRIOS
+  treatmentPlan         String?
+  treatmentFeedback     String?
+  treatmentScore        Int?
+
+  diagnosisScore        Int?
+
   communication Int?
   anamnesis     Int?
   reasoning     Int?
