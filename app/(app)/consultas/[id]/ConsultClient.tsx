@@ -47,12 +47,37 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
     if (data.ok) setSession(data.session);
   }, [sessionId]);
 
+  // 🔥 FIX PRINCIPAL AQUI
   useEffect(() => {
     const run = async () => {
-      await load();
+      const res = await fetch(`/api/sessions/${sessionId}/messages`, {
+        cache: "no-store",
+      });
+
+      const data = await res.json();
+
+      if (data.ok) {
+        setSession(data.session);
+
+        // 👉 se não tem mensagens → inicia automaticamente
+        if (data.session.messages.length === 0) {
+          await fetch(`/api/sessions/${sessionId}/messages`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              content: "Paciente: iniciar consulta",
+            }),
+          });
+
+          await load();
+        }
+      }
     };
+
     run();
-  }, [load]);
+  }, [load, sessionId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -94,7 +119,6 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
     if (!res.ok) return;
 
-    // 🔥 AQUI ESTÁ A CORREÇÃO
     await fetch(`/api/sessions/${sessionId}/finalize`, {
       method: "POST",
     });
