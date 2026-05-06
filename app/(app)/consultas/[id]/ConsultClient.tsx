@@ -77,6 +77,28 @@ function getLabel(m: Msg) {
   return "Paciente";
 }
 
+function getBubbleClass(m: Msg) {
+  if (m.role === "STUDENT") {
+    return "bg-blue-950 border border-blue-700";
+  }
+
+  const normalized = m.content.trim().toLowerCase();
+
+  if (normalized.startsWith("equipe:")) {
+    return "bg-emerald-950 border border-emerald-700";
+  }
+
+  if (normalized.startsWith("tutor:")) {
+    return "bg-amber-950 border border-amber-700";
+  }
+
+  if (normalized.startsWith("exame físico:")) {
+    return "bg-fuchsia-950 border border-fuchsia-700";
+  }
+
+  return "bg-[#111827] border border-gray-700";
+}
+
 function renderCriterion(v?: number) {
   return v === 1 ? "✔️" : "❌";
 }
@@ -160,6 +182,13 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
   async function send() {
     if (!text.trim()) {
+      return;
+    }
+
+    if (
+      session?.status === "WAITING_TREATMENT" ||
+      session?.status === "DONE"
+    ) {
       return;
     }
 
@@ -247,11 +276,13 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
     return (
       <div key={m.id} className="mb-3">
-        <div className="font-semibold text-sm">
+        <div className="font-semibold text-sm mb-1">
           {label}
         </div>
 
-        <div className="text-sm whitespace-pre-wrap bg-[#111827] p-3 rounded">
+        <div
+          className={`text-sm whitespace-pre-wrap p-3 rounded ${getBubbleClass(m)}`}
+        >
           {m.content.replace(/ - /g, "\n- ")}
         </div>
       </div>

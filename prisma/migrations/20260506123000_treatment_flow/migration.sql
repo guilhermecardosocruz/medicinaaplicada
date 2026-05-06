@@ -1,0 +1,9 @@
+-- AlterEnum
+ALTER TYPE "ConsultStatus" ADD VALUE IF NOT EXISTS 'WAITING_TREATMENT';
+
+-- AlterTable
+ALTER TABLE "Evaluation"
+ADD COLUMN IF NOT EXISTS "treatmentPlan" TEXT,
+ADD COLUMN IF NOT EXISTS "treatmentFeedback" TEXT,
+ADD COLUMN IF NOT EXISTS "treatmentScore" INTEGER,
+ADD COLUMN IF NOT EXISTS "diagnosisScore" INTEGER;
