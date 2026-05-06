@@ -92,12 +92,18 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
       }),
     });
 
-    if (res.ok) {
-      setShowDiag(false);
-      setDiagnosis("");
-      setJustification("");
-      await load();
-    }
+    if (!res.ok) return;
+
+    // 🔥 AQUI ESTÁ A CORREÇÃO
+    await fetch(`/api/sessions/${sessionId}/finalize`, {
+      method: "POST",
+    });
+
+    setShowDiag(false);
+    setDiagnosis("");
+    setJustification("");
+
+    await load();
   }
 
   function format(m: Msg) {
@@ -122,19 +128,16 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
     <div className="flex min-h-screen justify-center">
       <div className="w-full max-w-3xl px-4 pt-4 pb-40">
 
-        {/* HEADER */}
         <div className="mb-4">
           <div className="text-lg font-bold">{session.case.title}</div>
           <div className="text-xs text-gray-400">{session.status}</div>
         </div>
 
-        {/* CHAT */}
         <div>
           {session.messages.map(format)}
           <div ref={bottomRef} />
         </div>
 
-        {/* AVALIAÇÃO */}
         {session.status === "DONE" && session.evaluation && (
           <div className="mt-6 p-4 bg-white text-black rounded-xl">
             <div className="font-bold mb-2">Avaliação</div>
@@ -161,7 +164,6 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
           </div>
         )}
 
-        {/* INPUT */}
         {session.status === "IN_PROGRESS" && (
           <div className="fixed bottom-0 left-0 right-0 bg-[#0b1220] border-t border-gray-700">
             <div className="max-w-3xl mx-auto p-3">
@@ -186,13 +188,9 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
                   onKeyDown={handleKey}
                   className="flex-1 p-2 rounded bg-white text-black"
                   rows={2}
-                  placeholder="Digite sua mensagem..."
                 />
 
-                <button
-                  onClick={send}
-                  className="px-4 py-2 border rounded bg-white text-black"
-                >
+                <button onClick={send} className="px-4 py-2 border rounded bg-white text-black">
                   Enviar
                 </button>
               </div>
@@ -201,7 +199,6 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
           </div>
         )}
 
-        {/* MODAL */}
         {showDiag && (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center">
             <div className="bg-white text-black p-6 rounded-xl w-full max-w-md">
@@ -210,21 +207,19 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
                 Fechar diagnóstico
               </div>
 
-              <label className="text-sm font-semibold">Diagnóstico</label>
               <input
                 value={diagnosis}
                 onChange={(e) => setDiagnosis(e.target.value)}
                 className="w-full border p-2 mb-3 rounded"
-                placeholder="Ex: Anemia ferropriva"
+                placeholder="Diagnóstico"
               />
 
-              <label className="text-sm font-semibold">Justificativa clínica</label>
               <textarea
                 value={justification}
                 onChange={(e) => setJustification(e.target.value)}
                 className="w-full border p-2 mb-4 rounded"
                 rows={4}
-                placeholder="Explique seu raciocínio clínico..."
+                placeholder="Justificativa clínica"
               />
 
               <div className="flex gap-2">
