@@ -23,31 +23,70 @@ type Evaluation = {
 };
 
 type Session = {
-  case: { title: string };
+  case: {
+    title: string;
+  };
+
   status: "IN_PROGRESS" | "WAITING_EVAL" | "DONE";
+
   messages: Msg[];
+
   evaluation?: Evaluation;
 };
 
+function getLabel(m: Msg) {
+  if (m.role === "STUDENT") {
+    return "Médico";
+  }
+
+  if (m.role === "SYSTEM") {
+    return "Sistema";
+  }
+
+  const normalized = m.content.trim().toLowerCase();
+
+  if (normalized.startsWith("equipe:")) {
+    return "Equipe";
+  }
+
+  if (normalized.startsWith("tutor:")) {
+    return "Tutor";
+  }
+
+  if (normalized.startsWith("exame físico:")) {
+    return "Licença";
+  }
+
+  return "Paciente";
+}
+
 export default function ConsultClient({ sessionId }: { sessionId: string }) {
   const [session, setSession] = useState<Session | null>(null);
+
   const [text, setText] = useState("");
 
   const [showDiag, setShowDiag] = useState(false);
+
   const [diagnosis, setDiagnosis] = useState("");
+
   const [justification, setJustification] = useState("");
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  const startedRef = useRef(false);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/sessions/${sessionId}/messages`, {
       cache: "no-store",
     });
+
     const data = await res.json();
-    if (data.ok) setSession(data.session);
+
+    if (data.ok) {
+      setSession(data.session);
+    }
   }, [sessionId]);
 
-  // 🔥 FIX PRINCIPAL AQUI
   useEffect(() => {
     const run = async () => {
       const res = await fetch(`/api/sessions/${sessionId}/messages`, {
@@ -56,23 +95,32 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
       const data = await res.json();
 
-      if (data.ok) {
-        setSession(data.session);
+      if (!data.ok) {
+        return;
+      }
 
-        // 👉 se não tem mensagens → inicia automaticamente
-        if (data.session.messages.length === 0) {
-          await fetch(`/api/sessions/${sessionId}/messages`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              content: "Paciente: iniciar consulta",
-            }),
-          });
+      setSession(data.session);
 
-          await load();
-        }
+      const hasTriage = data.session.messages.some((m: Msg) =>
+        m.content.includes("TRIAGEM INICIAL"),
+      );
+
+      if (!hasTriage && !startedRef.current) {
+        startedRef.current = true;
+
+        await fetch(`/api/sessions/${sessionId}/messages`, {
+          method: "POST",
+
+          headers: {
+            "Content-Type": "application/json",
+          },
+
+          body: JSON.stringify({
+            content: "Paciente: iniciar consulta",
+          }),
+        });
+
+        await load();
       }
     };
 
@@ -80,21 +128,30 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
   }, [load, sessionId]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    bottomRef.current?.scrollIntoView({
+      behavior: "smooth",
+    });
   }, [session?.messages]);
 
   async function send() {
-    if (!text.trim()) return;
+    if (!text.trim()) {
+      return;
+    }
 
     await fetch(`/api/sessions/${sessionId}/messages`, {
       method: "POST",
+
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ content: text }),
+
+      body: JSON.stringify({
+        content: text,
+      }),
     });
 
     setText("");
+
     await load();
   }
 
@@ -108,37 +165,43 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
   async function saveDiagnosis() {
     const res = await fetch(`/api/sessions/${sessionId}/diagnosis`, {
       method: "POST",
+
       headers: {
         "Content-Type": "application/json",
       },
+
       body: JSON.stringify({
         diagnosis,
         justification,
       }),
     });
 
-    if (!res.ok) return;
+    if (!res.ok) {
+      return;
+    }
 
     await fetch(`/api/sessions/${sessionId}/finalize`, {
       method: "POST",
     });
 
     setShowDiag(false);
+
     setDiagnosis("");
+
     setJustification("");
 
     await load();
   }
 
   function format(m: Msg) {
-    let label: string = m.role;
-
-    if (m.role === "STUDENT") label = "Médico";
-    if (m.role === "PATIENT_AI") label = "Paciente";
+    const label = getLabel(m);
 
     return (
       <div key={m.id} className="mb-3">
-        <div className="font-semibold text-sm">{label}</div>
+        <div className="font-semibold text-sm">
+          {label}
+        </div>
+
         <div className="text-sm whitespace-pre-wrap bg-[#111827] p-3 rounded">
           {m.content.replace(/ - /g, "\n- ")}
         </div>
@@ -146,15 +209,22 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
     );
   }
 
-  if (!session) return null;
+  if (!session) {
+    return null;
+  }
 
   return (
     <div className="flex min-h-screen justify-center">
       <div className="w-full max-w-3xl px-4 pt-4 pb-40">
 
         <div className="mb-4">
-          <div className="text-lg font-bold">{session.case.title}</div>
-          <div className="text-xs text-gray-400">{session.status}</div>
+          <div className="text-lg font-bold">
+            {session.case.title}
+          </div>
+
+          <div className="text-xs text-gray-400">
+            {session.status}
+          </div>
         </div>
 
         <div>
@@ -164,19 +234,49 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
         {session.status === "DONE" && session.evaluation && (
           <div className="mt-6 p-4 bg-white text-black rounded-xl">
-            <div className="font-bold mb-2">Avaliação</div>
+            <div className="font-bold mb-2">
+              Avaliação
+            </div>
 
-            <div>Diagnóstico: {session.evaluation.studentDiagnosis}</div>
-            <div>Correto: {session.evaluation.correctDiagnosis}</div>
+            <div>
+              Diagnóstico: {session.evaluation.studentDiagnosis}
+            </div>
 
-            <div className="mt-2 font-semibold">Critérios</div>
-            <div>Comunicação: {session.evaluation.communication}</div>
-            <div>Anamnese: {session.evaluation.anamnesis}</div>
-            <div>Raciocínio: {session.evaluation.reasoning}</div>
-            <div>Segurança: {session.evaluation.safety}</div>
-            <div>Exames: {session.evaluation.exams}</div>
-            <div>Encerramento: {session.evaluation.closing}</div>
-            <div>Organização: {session.evaluation.organization}</div>
+            <div>
+              Correto: {session.evaluation.correctDiagnosis}
+            </div>
+
+            <div className="mt-2 font-semibold">
+              Critérios
+            </div>
+
+            <div>
+              Comunicação: {session.evaluation.communication}
+            </div>
+
+            <div>
+              Anamnese: {session.evaluation.anamnesis}
+            </div>
+
+            <div>
+              Raciocínio: {session.evaluation.reasoning}
+            </div>
+
+            <div>
+              Segurança: {session.evaluation.safety}
+            </div>
+
+            <div>
+              Exames: {session.evaluation.exams}
+            </div>
+
+            <div>
+              Encerramento: {session.evaluation.closing}
+            </div>
+
+            <div>
+              Organização: {session.evaluation.organization}
+            </div>
 
             <div className="mt-3 font-bold">
               Nota: {session.evaluation.score}/10
@@ -193,9 +293,26 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
             <div className="max-w-3xl mx-auto p-3">
 
               <div className="flex gap-2 mb-2 text-xs">
-                <button onClick={() => setText("Equipe: ")} className="border px-2 py-1 rounded">Equipe</button>
-                <button onClick={() => setText("Licença: ")} className="border px-2 py-1 rounded">Licença</button>
-                <button onClick={() => setText("Tutor: ")} className="border px-2 py-1 rounded">Tutor</button>
+                <button
+                  onClick={() => setText("Equipe: ")}
+                  className="border px-2 py-1 rounded"
+                >
+                  Equipe
+                </button>
+
+                <button
+                  onClick={() => setText("Licença: ")}
+                  className="border px-2 py-1 rounded"
+                >
+                  Licença
+                </button>
+
+                <button
+                  onClick={() => setText("Tutor: ")}
+                  className="border px-2 py-1 rounded"
+                >
+                  Tutor
+                </button>
 
                 <button
                   onClick={() => setShowDiag(true)}
@@ -214,7 +331,10 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
                   rows={2}
                 />
 
-                <button onClick={send} className="px-4 py-2 border rounded bg-white text-black">
+                <button
+                  onClick={send}
+                  className="px-4 py-2 border rounded bg-white text-black"
+                >
                   Enviar
                 </button>
               </div>
@@ -247,10 +367,17 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
               />
 
               <div className="flex gap-2">
-                <button onClick={saveDiagnosis} className="flex-1 bg-black text-white p-2 rounded">
+                <button
+                  onClick={saveDiagnosis}
+                  className="flex-1 bg-black text-white p-2 rounded"
+                >
                   Salvar diagnóstico
                 </button>
-                <button onClick={() => setShowDiag(false)} className="flex-1 border p-2 rounded">
+
+                <button
+                  onClick={() => setShowDiag(false)}
+                  className="flex-1 border p-2 rounded"
+                >
                   Cancelar
                 </button>
               </div>
