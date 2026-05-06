@@ -39,6 +39,14 @@ function clamp01(v: unknown) {
   return v === 1 ? 1 : 0;
 }
 
+function normalize(text: string) {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim();
+}
+
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const me = getSessionUser(req);
 
@@ -61,24 +69,27 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     },
   });
 
-  if (!session) {
+  if (!session || !session.evaluation) {
     return NextResponse.json({ ok: false }, { status: 404 });
   }
 
-  if (!session.evaluation) {
-    return NextResponse.json(
-      {
-        ok: false,
-        message: "Diagnóstico ainda não informado.",
-      },
-      { status: 400 },
-    );
-  }
-
   const transcript = session.messages
-    .slice(-40)
+    .slice(-60)
     .map((m) => `${m.role}: ${m.content}`)
     .join("\n");
+
+  const blueprint =
+    typeof session.case.blueprint === "object" &&
+    session.case.blueprint !== null
+      ? session.case.blueprint as Record<string, unknown>
+      : {};
+
+  const blueprintDiagnosis =
+    typeof blueprint.correctDiagnosis === "string"
+      ? blueprint.correctDiagnosis
+      : typeof blueprint.diagnosis === "string"
+        ? blueprint.diagnosis
+        : "";
 
   const studentDiagnosis =
     session.evaluation.studentDiagnosis || "";
@@ -87,13 +98,20 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     session.evaluation.clinicalJustification || "";
 
   const system = `
-Você é um avaliador pedagógico médico.
+Você é um tutor médico experiente e professor de medicina.
 
 IMPORTANTE:
-- descubra o diagnóstico correto
-- nunca deixe diagnóstico vazio
-- avalie de forma justa
-- o aluno pode ganhar pontos mesmo errando o diagnóstico
+- Você deve agir como um tutor humano.
+- Explique o raciocínio clínico correto.
+- Explique o que o estudante deveria ter investigado.
+- Explique quais pistas clínicas indicavam o diagnóstico correto.
+- Seja didático.
+- Nunca deixe feedback vazio.
+- Nunca deixe o diagnóstico correto vazio.
+- Nunca responda "não identificado".
+- Mesmo quando o aluno erra, valorize os pontos positivos.
+- O aluno pode ganhar pontos mesmo errando o diagnóstico.
+- Se o aluno acertar, parabenize explicitamente.
 
 Retorne APENAS JSON válido.
 
@@ -107,13 +125,13 @@ Formato:
   "closing": 0 ou 1,
   "organization": 0 ou 1,
 
-  "correctDiagnosis": "texto",
+  "correctDiagnosis": "diagnóstico correto",
 
-  "diagnosisExplanation": "texto",
+  "diagnosisExplanation": "explicação do raciocínio clínico correto",
 
-  "studentFeedback": "texto",
+  "studentFeedback": "feedback pedagógico estilo tutor humano",
 
-  "feedback": "texto",
+  "feedback": "resumo final",
 
   "strengths": [],
   "weaknesses": [],
@@ -122,13 +140,17 @@ Formato:
 `.trim();
 
   const user = `
-CASO:
+CASO CLÍNICO:
+
 ${session.case.seed}
 
-CONSULTA:
+DIAGNÓSTICO ESPERADO:
+${blueprintDiagnosis}
+
+TRANSCRIÇÃO DA CONSULTA:
 ${transcript}
 
-DIAGNÓSTICO DO ALUNO:
+DIAGNÓSTICO DO ESTUDANTE:
 ${studentDiagnosis}
 
 JUSTIFICATIVA:
@@ -140,7 +162,7 @@ ${studentJustification}
   const completion = await openai.chat.completions.create({
     model: getOpenAIModel(),
 
-    temperature: 0.2,
+    temperature: 0.3,
 
     messages: [
       {
@@ -170,13 +192,14 @@ ${studentJustification}
 
   const correctDiagnosis =
     parsed?.correctDiagnosis?.trim() ||
-    "Diagnóstico clínico não identificado.";
+    blueprintDiagnosis ||
+    "Diagnóstico clínico principal.";
 
   const normalizedStudent =
-    studentDiagnosis.toLowerCase().trim();
+    normalize(studentDiagnosis);
 
   const normalizedCorrect =
-    correctDiagnosis.toLowerCase().trim();
+    normalize(correctDiagnosis);
 
   const diagnosisCorrect =
     normalizedStudent.length > 2 &&
@@ -202,24 +225,61 @@ ${studentJustification}
 
   const diagnosisExplanation =
     parsed?.diagnosisExplanation?.trim() ||
-    "Sem explicação clínica.";
+    "O caso precisava de melhor correlação clínica entre sintomas, exame físico e exames complementares.";
 
-  const studentFeedback =
+  let studentFeedback =
     parsed?.studentFeedback?.trim() ||
-    "Sem feedback.";
+    "";
+
+  if (!studentFeedback) {
+    if (diagnosisCorrect) {
+      studentFeedback =
+        "Parabéns. O raciocínio clínico utilizado foi compatível com o diagnóstico correto.";
+    } else {
+      studentFeedback =
+        `O diagnóstico principal esperado era ${correctDiagnosis}. Você apresentou outra hipótese diagnóstica, porém alguns elementos importantes do caso deveriam ter sido melhor explorados.`;
+    }
+  }
 
   const feedback =
     parsed?.feedback?.trim() ||
     "";
 
-  const finalFeedback = `
-${studentFeedback}
+  const tutorIntervention = diagnosisCorrect
+    ? `
+Tutor:
+Parabéns. Você conseguiu identificar corretamente o diagnóstico principal do caso.
 
-Diagnóstico correto:
+Os dados clínicos, os sintomas apresentados e os exames solicitados estavam compatíveis com ${correctDiagnosis}.
+
+Seu raciocínio clínico foi adequado para o cenário apresentado.
+`.trim()
+    : `
+Tutor:
+O diagnóstico principal esperado neste caso era:
+
 ${correctDiagnosis}
 
-Explicação clínica:
+O diagnóstico informado pelo estudante não corresponde ao quadro clínico principal esperado.
+
+Para chegar ao diagnóstico correto, seria importante investigar melhor:
+
+- relação entre sintomas e esforço físico;
+- padrão temporal da dor;
+- sinais de gravidade;
+- correlação clínica com os exames complementares;
+- hipóteses cardiovasculares prioritárias.
+
+Pistas importantes do caso:
 ${diagnosisExplanation}
+
+Mesmo assim, alguns aspectos positivos da consulta foram observados e o caso pode continuar para definição do tratamento.
+`.trim();
+
+  const finalFeedback = `
+${tutorIntervention}
+
+${studentFeedback}
 
 Resumo geral:
 ${feedback}
