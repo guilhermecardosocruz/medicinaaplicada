@@ -74,6 +74,14 @@ function getLabel(m: Msg) {
   return "Paciente";
 }
 
+function renderCriterion(v?: number) {
+  if (v === 1) {
+    return "✔️";
+  }
+
+  return "❌";
+}
+
 export default function ConsultClient({ sessionId }: { sessionId: string }) {
   const [session, setSession] = useState<Session | null>(null);
 
@@ -306,31 +314,31 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
             </div>
 
             <div>
-              Comunicação: {session.evaluation.communication}
+              Comunicação: {renderCriterion(session.evaluation.communication)}
             </div>
 
             <div>
-              Anamnese: {session.evaluation.anamnesis}
+              Anamnese: {renderCriterion(session.evaluation.anamnesis)}
             </div>
 
             <div>
-              Raciocínio: {session.evaluation.reasoning}
+              Raciocínio: {renderCriterion(session.evaluation.reasoning)}
             </div>
 
             <div>
-              Segurança: {session.evaluation.safety}
+              Segurança: {renderCriterion(session.evaluation.safety)}
             </div>
 
             <div>
-              Exames: {session.evaluation.exams}
+              Exames: {renderCriterion(session.evaluation.exams)}
             </div>
 
             <div>
-              Encerramento: {session.evaluation.closing}
+              Encerramento: {renderCriterion(session.evaluation.closing)}
             </div>
 
             <div>
-              Organização: {session.evaluation.organization}
+              Organização: {renderCriterion(session.evaluation.organization)}
             </div>
 
             <div className="mt-4 text-xl font-bold">
@@ -339,6 +347,18 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
             <div className="mt-4 whitespace-pre-wrap text-sm">
               {session.evaluation.feedback}
+            </div>
+
+            <div className="mt-6 border-t pt-4">
+              <button
+                className="w-full bg-black text-white p-3 rounded-xl"
+              >
+                Encerrar caso e definir tratamento
+              </button>
+
+              <div className="text-xs text-gray-500 mt-2">
+                Próxima etapa: medicações, internação, exames adicionais, orientações e retorno.
+              </div>
             </div>
 
           </div>

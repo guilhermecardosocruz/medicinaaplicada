@@ -35,6 +35,10 @@ function safeJsonParse(text: string): EvalResponse | null {
   }
 }
 
+function clamp01(v: unknown) {
+  return v === 1 ? 1 : 0;
+}
+
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const me = getSessionUser(req);
 
@@ -72,7 +76,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   }
 
   const transcript = session.messages
-    .slice(-30)
+    .slice(-40)
     .map((m) => `${m.role}: ${m.content}`)
     .join("\n");
 
@@ -83,26 +87,26 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     session.evaluation.clinicalJustification || "";
 
   const system = `
-Você é um avaliador pedagógico de um simulador clínico.
-
-Sua função:
-- avaliar a consulta
-- avaliar o diagnóstico
-- explicar o raciocínio correto
-- orientar o aluno
+Você é um avaliador pedagógico de um simulador clínico médico.
 
 IMPORTANTE:
-- o aluno pode acertar parcialmente
-- seja justo
-- valorize raciocínio clínico
-- não exija exames desnecessários
-- não penalize excesso de prudência
+- Você DEVE descobrir o diagnóstico correto.
+- Nunca deixe o campo correctDiagnosis vazio.
+- Nunca responda "não informado".
+- Sempre forneça um diagnóstico clínico plausível.
+- Mesmo se o aluno errar completamente, avalie comunicação, anamnese, segurança e organização.
+- O aluno pode ganhar pontos mesmo errando o diagnóstico.
+- Seja pedagógico e justo.
 
-Você DEVE descobrir o diagnóstico correto baseado no caso clínico.
+Você deve:
+1) descobrir o diagnóstico correto
+2) avaliar o desempenho do aluno
+3) explicar o raciocínio clínico correto
+4) orientar o que faltou investigar
 
 Retorne APENAS JSON válido.
 
-Formato:
+Formato obrigatório:
 {
   "communication": 0 ou 1,
   "anamnesis": 0 ou 1,
@@ -112,24 +116,26 @@ Formato:
   "closing": 0 ou 1,
   "organization": 0 ou 1,
 
-  "correctDiagnosis": "texto",
+  "correctDiagnosis": "diagnóstico correto",
 
-  "diagnosisExplanation": "explicação objetiva do diagnóstico correto",
+  "diagnosisExplanation": "explicação do raciocínio clínico correto",
 
-  "studentFeedback": "texto pedagógico explicando se o aluno acertou, errou, parcialmente acertou e o que faltou",
+  "studentFeedback": "feedback pedagógico ao estudante",
 
-  "feedback": "resumo geral",
+  "feedback": "resumo final",
 
   "strengths": [],
-
   "weaknesses": [],
-
   "improvements": []
 }
 `.trim();
 
   const user = `
-TRANSCRIÇÃO DA CONSULTA:
+CASO CLÍNICO:
+
+${session.case.seed}
+
+TRANSCRIÇÃO:
 
 ${transcript}
 
@@ -160,13 +166,22 @@ ${studentJustification}
     ],
   });
 
-  const parsed = safeJsonParse(
-    completion.choices[0]?.message?.content || "",
-  );
+  const raw =
+    completion.choices[0]?.message?.content || "";
+
+  const parsed = safeJsonParse(raw);
+
+  const communication = clamp01(parsed?.communication);
+  const anamnesis = clamp01(parsed?.anamnesis);
+  const reasoning = clamp01(parsed?.reasoning);
+  const safety = clamp01(parsed?.safety);
+  const exams = clamp01(parsed?.exams);
+  const closing = clamp01(parsed?.closing);
+  const organization = clamp01(parsed?.organization);
 
   const correctDiagnosis =
     parsed?.correctDiagnosis?.trim() ||
-    "Não informado";
+    "Diagnóstico clínico não identificado pelo avaliador.";
 
   const normalizedStudent =
     studentDiagnosis.toLowerCase().trim();
@@ -175,28 +190,37 @@ ${studentJustification}
     correctDiagnosis.toLowerCase().trim();
 
   const diagnosisCorrect =
-    normalizedStudent.includes(normalizedCorrect) ||
-    normalizedCorrect.includes(normalizedStudent);
+    normalizedStudent.length > 2 &&
+    (
+      normalizedStudent.includes(normalizedCorrect) ||
+      normalizedCorrect.includes(normalizedStudent)
+    );
 
   const criteriaScore =
-    (parsed?.communication || 0) +
-    (parsed?.anamnesis || 0) +
-    (parsed?.reasoning || 0) +
-    (parsed?.safety || 0) +
-    (parsed?.exams || 0) +
-    (parsed?.closing || 0) +
-    (parsed?.organization || 0);
+    communication +
+    anamnesis +
+    reasoning +
+    safety +
+    exams +
+    closing +
+    organization;
 
-  const diagnosisBonus = diagnosisCorrect ? 3 : 0;
+  const diagnosisBonus =
+    diagnosisCorrect ? 3 : 0;
 
-  const finalScore = criteriaScore + diagnosisBonus;
+  const finalScore =
+    Math.min(criteriaScore + diagnosisBonus, 10);
 
   const diagnosisExplanation =
     parsed?.diagnosisExplanation?.trim() ||
-    "";
+    "Sem explicação clínica disponível.";
 
   const studentFeedback =
     parsed?.studentFeedback?.trim() ||
+    "Sem feedback disponível.";
+
+  const feedback =
+    parsed?.feedback?.trim() ||
     "";
 
   const finalFeedback = `
@@ -208,8 +232,8 @@ ${correctDiagnosis}
 Explicação clínica:
 ${diagnosisExplanation}
 
-Resumo da avaliação:
-${parsed?.feedback || ""}
+Resumo geral:
+${feedback}
 `.trim();
 
   await prisma.evaluation.update({
@@ -218,19 +242,13 @@ ${parsed?.feedback || ""}
     },
 
     data: {
-      communication: parsed?.communication ?? null,
-
-      anamnesis: parsed?.anamnesis ?? null,
-
-      reasoning: parsed?.reasoning ?? null,
-
-      safety: parsed?.safety ?? null,
-
-      exams: parsed?.exams ?? null,
-
-      closing: parsed?.closing ?? null,
-
-      organization: parsed?.organization ?? null,
+      communication,
+      anamnesis,
+      reasoning,
+      safety,
+      exams,
+      closing,
+      organization,
 
       correctDiagnosis,
 
@@ -262,6 +280,7 @@ ${parsed?.feedback || ""}
     {
       ok: true,
       score: finalScore,
+      raw,
     },
     { status: 200 },
   );
