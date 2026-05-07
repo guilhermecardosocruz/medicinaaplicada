@@ -248,6 +248,18 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
       method: "POST",
     });
 
+    await fetch(`/api/sessions/${sessionId}/treatment`, {
+      method: "POST",
+
+      headers: {
+        "Content-Type": "application/json",
+      },
+
+      body: JSON.stringify({
+        action: "start",
+      }),
+    });
+
     setMode("treatment");
   }
 
@@ -308,24 +320,6 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
   function startDiagnosis() {
     setMode("diagnosis");
-  }
-
-  async function startTreatment() {
-    await fetch(`/api/sessions/${sessionId}/treatment`, {
-      method: "POST",
-
-      headers: {
-        "Content-Type": "application/json",
-      },
-
-      body: JSON.stringify({
-        action: "start",
-      }),
-    });
-
-    setMode("treatment");
-
-    await load();
   }
 
   function renderMessage(m: Msg) {
