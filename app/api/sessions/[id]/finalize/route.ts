@@ -8,39 +8,39 @@ type EvalResponse = {
   anamnesis?: number;
   reasoning?: number;
   safety?: number;
-  exams?: number;
-  closing?: number;
-  organization?: number;
+  investigation?: number;
+  diagnosisAccuracy?: number;
 
+  correctDiagnosis?: string;
+  diagnosisExplanation?: string;
+  studentFeedback?: string;
   feedback?: string;
 
   strengths?: string[];
-
   weaknesses?: string[];
-
   improvements?: string[];
-
-  correctDiagnosis?: string;
-
-  diagnosisExplanation?: string;
-
-  studentFeedback?: string;
 };
 
 function safeJsonParse(text: string): EvalResponse | null {
   try {
     return JSON.parse(text);
   } catch {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(text.slice(start, end + 1));
+      } catch {
+        return null;
+      }
+    }
     return null;
   }
 }
 
-function clampScore(v: unknown) {
-  if (typeof v !== "number") {
-    return 0;
-  }
-
-  return Math.max(0, Math.min(1, Number(v.toFixed(1))));
+function clamp(v: unknown, max: number) {
+  if (typeof v !== "number") return 0;
+  return Math.max(0, Math.min(max, Number(v.toFixed(1))));
 }
 
 function normalize(text: string) {
@@ -53,19 +53,12 @@ function normalize(text: string) {
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const me = getSessionUser(req);
-
-  if (!me) {
-    return NextResponse.json({ ok: false }, { status: 401 });
-  }
+  if (!me) return NextResponse.json({ ok: false }, { status: 401 });
 
   const { id } = await ctx.params;
 
   const session = await prisma.consultSession.findFirst({
-    where: {
-      id,
-      userId: me.id,
-    },
-
+    where: { id, userId: me.id },
     include: {
       case: true,
       messages: true,
@@ -78,14 +71,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   }
 
   const transcript = session.messages
-    .slice(-60)
+    .slice(-70)
     .map((m) => `${m.role}: ${m.content}`)
     .join("\n");
 
   const blueprint =
-    typeof session.case.blueprint === "object" &&
-    session.case.blueprint !== null
-      ? session.case.blueprint as Record<string, unknown>
+    typeof session.case.blueprint === "object" && session.case.blueprint !== null
+      ? (session.case.blueprint as Record<string, unknown>)
       : {};
 
   const blueprintDiagnosis =
@@ -95,49 +87,41 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         ? blueprint.diagnosis
         : "";
 
-  const studentDiagnosis =
-    session.evaluation.studentDiagnosis || "";
-
-  const studentJustification =
-    session.evaluation.clinicalJustification || "";
+  const studentDiagnosis = session.evaluation.studentDiagnosis || "";
 
   const system = `
 Você é um tutor médico humano experiente.
 
-Você deve:
-- avaliar o estudante de forma JUSTA
-- usar notas PARCIAIS
-- evitar notas 0 absolutas sem necessidade
-- valorizar boas decisões mesmo em consultas incompletas
-- explicar o motivo da nota
-- agir como professor humano
+Avalie a fase diagnóstica da consulta.
+
+Use 5 itens, cada um de 0 a 2:
+- communication
+- anamnesis
+- reasoning
+- safety
+- investigation
+
+A soma gera nota diagnóstica de 0 a 10.
 
 IMPORTANTE:
-- as notas devem ir de 0 até 1
-- pode usar 0.1, 0.2, 0.5, 0.7 etc
-- comunicação NÃO deve zerar facilmente
-- valorize tentativa de raciocínio clínico
+- use notas parciais como 0.5, 1.2, 1.8.
+- não zere comunicação facilmente.
+- o estudante pode errar o diagnóstico e ainda receber pontos nos outros itens.
+- se o estudante acertar, parabenize.
+- se errar, explique como tutor: "o problema real era..." e diga quais passos levariam ao diagnóstico correto.
+- nunca deixe correctDiagnosis vazio.
 
-Retorne APENAS JSON válido.
-
-Formato:
+Retorne APENAS JSON válido:
 {
-  "communication": 0-1,
-  "anamnesis": 0-1,
-  "reasoning": 0-1,
-  "safety": 0-1,
-  "exams": 0-1,
-  "closing": 0-1,
-  "organization": 0-1,
-
+  "communication": 0-2,
+  "anamnesis": 0-2,
+  "reasoning": 0-2,
+  "safety": 0-2,
+  "investigation": 0-2,
   "correctDiagnosis": "texto",
-
   "diagnosisExplanation": "texto",
-
-  "studentFeedback": "texto",
-
-  "feedback": "texto",
-
+  "studentFeedback": "texto estilo tutor",
+  "feedback": "resumo",
   "strengths": [],
   "weaknesses": [],
   "improvements": []
@@ -151,189 +135,129 @@ ${session.case.seed}
 DIAGNÓSTICO ESPERADO:
 ${blueprintDiagnosis}
 
-CONSULTA:
+TRANSCRIÇÃO:
 ${transcript}
 
 DIAGNÓSTICO DO ESTUDANTE:
 ${studentDiagnosis}
-
-JUSTIFICATIVA:
-${studentJustification}
 `.trim();
 
   const openai = getOpenAIClient();
 
   const completion = await openai.chat.completions.create({
     model: getOpenAIModel(),
-
-    temperature: 0.3,
-
+    temperature: 0.25,
     messages: [
-      {
-        role: "system",
-        content: system,
-      },
-
-      {
-        role: "user",
-        content: user,
-      },
+      { role: "system", content: system },
+      { role: "user", content: user },
     ],
   });
 
-  const raw =
-    completion.choices[0]?.message?.content || "";
+  const parsed = safeJsonParse(completion.choices[0]?.message?.content || "");
 
-  const parsed = safeJsonParse(raw);
-
-  const communication = clampScore(parsed?.communication);
-  const anamnesis = clampScore(parsed?.anamnesis);
-  const reasoning = clampScore(parsed?.reasoning);
-  const safety = clampScore(parsed?.safety);
-  const exams = clampScore(parsed?.exams);
-  const closing = clampScore(parsed?.closing);
-  const organization = clampScore(parsed?.organization);
+  const communication = clamp(parsed?.communication, 2);
+  const anamnesis = clamp(parsed?.anamnesis, 2);
+  const reasoning = clamp(parsed?.reasoning, 2);
+  const safety = clamp(parsed?.safety, 2);
+  const investigation = clamp(parsed?.investigation, 2);
 
   const correctDiagnosis =
     parsed?.correctDiagnosis?.trim() ||
     blueprintDiagnosis ||
-    "Diagnóstico clínico principal.";
-
-  const normalizedStudent =
-    normalize(studentDiagnosis);
-
-  const normalizedCorrect =
-    normalize(correctDiagnosis);
+    "Diagnóstico clínico principal";
 
   const diagnosisCorrect =
-    normalizedStudent.length > 2 &&
-    (
-      normalizedStudent.includes(normalizedCorrect) ||
-      normalizedCorrect.includes(normalizedStudent)
-    );
+    normalize(studentDiagnosis).length > 2 &&
+    (normalize(studentDiagnosis).includes(normalize(correctDiagnosis)) ||
+      normalize(correctDiagnosis).includes(normalize(studentDiagnosis)));
 
-  const criteriaScore =
-    communication +
-    anamnesis +
-    reasoning +
-    safety +
-    exams +
-    closing +
-    organization;
-
-  const diagnosisBonus =
-    diagnosisCorrect ? 3 : 0;
-
-  const diagnosisScore =
-    Math.min(
-      Number((criteriaScore + diagnosisBonus).toFixed(1)),
-      10,
-    );
+  const diagnosisScore = Number(
+    (communication + anamnesis + reasoning + safety + investigation).toFixed(1),
+  );
 
   const diagnosisExplanation =
     parsed?.diagnosisExplanation?.trim() ||
-    "O caso precisava de melhor correlação clínica.";
+    "O caso precisava de melhor correlação entre sintomas, exame físico e exames complementares.";
 
-  let studentFeedback =
-    parsed?.studentFeedback?.trim() ||
-    "";
-
-  if (!studentFeedback) {
-    if (diagnosisCorrect) {
-      studentFeedback =
-        "Parabéns. O raciocínio clínico foi compatível com o diagnóstico correto.";
-    } else {
-      studentFeedback =
-        `O diagnóstico principal esperado era ${correctDiagnosis}. Algumas pistas clínicas importantes deveriam ter sido melhor exploradas.`;
-    }
-  }
-
-  const feedback =
-    parsed?.feedback?.trim() ||
-    "";
-
-  const tutorIntervention = diagnosisCorrect
+  const tutorMessage = diagnosisCorrect
     ? `
 Tutor:
-Parabéns. Você conseguiu identificar corretamente o diagnóstico principal do caso.
+Parabéns, você acertou o diagnóstico principal.
 
-Os sinais clínicos, sintomas e exames complementares estavam compatíveis com ${correctDiagnosis}.
+Diagnóstico correto:
+${correctDiagnosis}
 
-Seu raciocínio clínico foi adequado para o cenário apresentado.
+Por que estava correto:
+${diagnosisExplanation}
+
+Avaliação diagnóstica:
+- Comunicação: ${communication}/2
+- Anamnese: ${anamnesis}/2
+- Raciocínio clínico: ${reasoning}/2
+- Segurança: ${safety}/2
+- Investigação/exames: ${investigation}/2
+
+Nota diagnóstica: ${diagnosisScore}/10
+
+Agora siga para a fase de tratamento. Clique em "Tratamento" e defina a conduta.
 `.trim()
     : `
 Tutor:
-O diagnóstico principal esperado era:
+Jovem, ainda não era esse o problema principal.
 
+O problema real do paciente era:
 ${correctDiagnosis}
 
-Para chegar ao diagnóstico correto, seria importante investigar melhor:
-
-- padrão temporal dos sintomas;
-- evolução clínica;
-- sinais de gravidade;
-- correlação entre sintomas e exames;
-- principais diagnósticos diferenciais.
-
-Pistas importantes do caso:
+O que deveria ter sido feito para chegar lá:
 ${diagnosisExplanation}
 
-Mesmo assim, alguns aspectos positivos foram identificados na condução clínica.
-`.trim();
+Avaliação diagnóstica:
+- Comunicação: ${communication}/2
+- Anamnese: ${anamnesis}/2
+- Raciocínio clínico: ${reasoning}/2
+- Segurança: ${safety}/2
+- Investigação/exames: ${investigation}/2
 
-  const finalFeedback = `
-${tutorIntervention}
+Nota diagnóstica: ${diagnosisScore}/10
 
-${studentFeedback}
+${parsed?.studentFeedback?.trim() || ""}
 
-Resumo geral:
-${feedback}
+Agora siga para a fase de tratamento do problema real. Clique em "Tratamento" e defina a conduta.
 `.trim();
 
   await prisma.evaluation.update({
-    where: {
-      sessionId: session.id,
-    },
-
+    where: { sessionId: session.id },
     data: {
       communication,
       anamnesis,
       reasoning,
       safety,
-      exams,
-      closing,
-      organization,
-
+      exams: investigation,
+      closing: null,
+      organization: null,
       correctDiagnosis,
-
       diagnosisCorrect,
-
       diagnosisScore,
-
       score: diagnosisScore,
-
-      feedback: finalFeedback,
-
+      feedback: tutorMessage,
       strengths: parsed?.strengths || [],
-
       weaknesses: parsed?.weaknesses || [],
-
       improvements: parsed?.improvements || [],
     },
   });
 
-  await prisma.consultSession.update({
-    where: {
-      id: session.id,
-    },
-
+  await prisma.message.create({
     data: {
-      status: "WAITING_TREATMENT",
+      sessionId: session.id,
+      role: "COORDINATOR_AI",
+      content: tutorMessage,
     },
   });
 
-  return NextResponse.json({
-    ok: true,
-    score: diagnosisScore,
+  await prisma.consultSession.update({
+    where: { id: session.id },
+    data: { status: "WAITING_TREATMENT" },
   });
+
+  return NextResponse.json({ ok: true, score: diagnosisScore }, { status: 200 });
 }

@@ -23,10 +23,7 @@ function detectAssistantRole(content: string) {
     return "COORDINATOR_AI" as const;
   }
 
-  if (
-    normalized.startsWith("tutor:") ||
-    normalized.startsWith("exame físico:")
-  ) {
+  if (normalized.startsWith("tutor:") || normalized.startsWith("exame físico:")) {
     return "COORDINATOR_AI" as const;
   }
 
@@ -35,18 +32,12 @@ function detectAssistantRole(content: string) {
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const me = getSessionUser(req);
-
-  if (!me) {
-    return NextResponse.json({ ok: false }, { status: 401 });
-  }
+  if (!me) return NextResponse.json({ ok: false }, { status: 401 });
 
   const { id } = await ctx.params;
 
   const session = await prisma.consultSession.findFirst({
-    where: {
-      id,
-      userId: me.id,
-    },
+    where: { id, userId: me.id },
     select: {
       id: true,
       status: true,
@@ -56,18 +47,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       orders: true,
       results: true,
       followup: true,
-
-      case: {
-        select: {
-          title: true,
-          triage: true,
-        },
-      },
-
+      case: { select: { title: true, triage: true } },
       evaluation: {
         select: {
           score: true,
+          diagnosisScore: true,
+          treatmentScore: true,
           feedback: true,
+          treatmentFeedback: true,
           strengths: true,
           weaknesses: true,
           improvements: true,
@@ -75,6 +62,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
           clinicalJustification: true,
           correctDiagnosis: true,
           diagnosisCorrect: true,
+          treatmentPlan: true,
           communication: true,
           anamnesis: true,
           reasoning: true,
@@ -84,68 +72,33 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
           organization: true,
         },
       },
-
       messages: {
-        orderBy: {
-          createdAt: "asc",
-        },
-        select: {
-          id: true,
-          role: true,
-          content: true,
-          createdAt: true,
-        },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, role: true, content: true, createdAt: true },
       },
     },
   });
 
-  if (!session) {
-    return NextResponse.json({ ok: false }, { status: 404 });
-  }
+  if (!session) return NextResponse.json({ ok: false }, { status: 404 });
 
-  return NextResponse.json(
-    {
-      ok: true,
-      session,
-    },
-    { status: 200 },
-  );
+  return NextResponse.json({ ok: true, session }, { status: 200 });
 }
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const me = getSessionUser(req);
-
-  if (!me) {
-    return NextResponse.json({ ok: false }, { status: 401 });
-  }
+  if (!me) return NextResponse.json({ ok: false }, { status: 401 });
 
   const { id } = await ctx.params;
 
-  const body = (await req.json().catch(() => null)) as {
-    content?: unknown;
-  } | null;
-
-  const content =
-    typeof body?.content === "string"
-      ? body.content.trim()
-      : "";
+  const body = (await req.json().catch(() => null)) as { content?: unknown } | null;
+  const content = typeof body?.content === "string" ? body.content.trim() : "";
 
   if (!content) {
-    return NextResponse.json(
-      {
-        ok: false,
-        message: "Mensagem vazia.",
-      },
-      { status: 400 },
-    );
+    return NextResponse.json({ ok: false, message: "Mensagem vazia." }, { status: 400 });
   }
 
   const session = await prisma.consultSession.findFirst({
-    where: {
-      id,
-      userId: me.id,
-    },
-
+    where: { id, userId: me.id },
     select: {
       id: true,
       status: true,
@@ -155,38 +108,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       orders: true,
       results: true,
       followup: true,
-
-      case: {
-        select: {
-          seed: true,
-          title: true,
-          blueprint: true,
-        },
-      },
-
+      case: { select: { seed: true, title: true, blueprint: true } },
       messages: {
-        orderBy: {
-          createdAt: "asc",
-        },
-
-        select: {
-          role: true,
-          content: true,
-        },
+        orderBy: { createdAt: "asc" },
+        select: { role: true, content: true },
       },
     },
   });
 
-  if (!session) {
-    return NextResponse.json({ ok: false }, { status: 404 });
-  }
+  if (!session) return NextResponse.json({ ok: false }, { status: 404 });
 
   if (session.status !== "IN_PROGRESS") {
     return NextResponse.json(
-      {
-        ok: false,
-        message: "Sessão não está em andamento.",
-      },
+      { ok: false, message: "Sessão não está em andamento." },
       { status: 400 },
     );
   }
@@ -199,34 +133,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     },
   });
 
-  const last = [
-    ...session.messages,
-    {
-      role: "STUDENT" as const,
-      content,
-    },
-  ].slice(-12);
+  const last = [...session.messages, { role: "STUDENT" as const, content }].slice(-12);
 
   const contextBlocks = [
-    session.triageData
-      ? `TRIAGEM_COLETADA=${compactJson(session.triageData)}`
-      : "",
-
-    session.physicalData
-      ? `EXAME_FISICO_REVELADO=${compactJson(session.physicalData)}`
-      : "",
-
-    session.orders
-      ? `EXAMES_SOLICITADOS_HIST=${compactJson(session.orders)}`
-      : "",
-
-    session.results
-      ? `RESULTADOS_HISTORICOS=${compactJson(session.results)}`
-      : "",
-
-    session.followup
-      ? `RETORNO=${compactJson(session.followup)}`
-      : "",
+    session.triageData ? `TRIAGEM_COLETADA=${compactJson(session.triageData)}` : "",
+    session.physicalData ? `EXAME_FISICO_REVELADO=${compactJson(session.physicalData)}` : "",
+    session.orders ? `EXAMES_SOLICITADOS_HIST=${compactJson(session.orders)}` : "",
+    session.results ? `RESULTADOS_HISTORICOS=${compactJson(session.results)}` : "",
+    session.followup ? `RETORNO=${compactJson(session.followup)}` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -283,7 +197,6 @@ Organize em lista, com uma informação por linha:
 - Motivo da admissão:
 - Início e tempo de evolução dos sintomas:
 - Sinais vitais:
-
   - PA:
   - FC:
   - FR:
@@ -291,7 +204,6 @@ Organize em lista, com uma informação por linha:
   - SpO₂:
   - Dor:
   - Glicemia, se houver:
-
 - Classificação de risco:
 - Principais red flags presentes:
 
@@ -306,15 +218,9 @@ MODO DE INTERAÇÃO:
 Finalize exatamente com:
 "Pode iniciar a abordagem, doutor."
 
-Depois disso:
-- Nunca repita a triagem completa, a menos que o aluno peça.
-- Nunca repita o bloco de modos, a menos que o aluno peça.
-
 =====================================================
 1) IDENTIFICAÇÃO DO MODO
 =====================================================
-
-Determine o modo pela primeira palavra da mensagem:
 
 Paciente:
 - Fale como paciente.
@@ -335,20 +241,13 @@ Se a mensagem NÃO começar com nenhum prefixo:
 2) MODO PACIENTE
 =====================================================
 
-Você deve agir como um paciente humano real.
-
 O paciente deve:
 - falar de forma simples, natural e leiga;
 - responder apenas o que foi perguntado;
-- demonstrar medo, dor, ansiedade ou dúvida quando coerente;
-- manter sempre os mesmos dados pessoais;
+- manter coerência;
 - não usar termos técnicos;
 - não citar diagnóstico;
-- não interpretar exames;
-- não falar como médico.
-
-Evite respostas longas demais.
-Evite entregar informações que não foram perguntadas.
+- não interpretar exames.
 
 =====================================================
 3) MODO EQUIPE — EXAMES E RESULTADOS
@@ -357,52 +256,15 @@ Evite entregar informações que não foram perguntadas.
 Quando a mensagem começar com Equipe:, o aluno está solicitando exames, resultados ou laudos.
 
 REGRAS:
-- Sempre gerar um resultado plausível e coerente com o caso.
+- Sempre gerar resultado plausível e coerente com o caso.
 - Nunca negar exame.
-- Mesmo se o exame não estiver explicitamente no blueprint, gerar um laudo coerente com os dados clínicos do caso.
-- Ecocardiograma, ressonância, tomografia, ultrassom, raio-x e exames laboratoriais SEMPRE devem retornar algo útil.
-
------------------------------------------------------
-3.1 LABORATÓRIO
------------------------------------------------------
-
-Resultados laboratoriais:
-- trazer valores
-- unidade
-- valor de referência
-
-Nunca interpretar exames laboratoriais.
-
------------------------------------------------------
-3.2 ECG
------------------------------------------------------
-
-ECG:
-- Ritmo:
-- Frequência:
-- Eixo:
-- PR:
-- QRS:
-- QTc:
-- ST:
-- Onda T:
-- Conclusão descritiva:
-
------------------------------------------------------
-3.3 IMAGEM
------------------------------------------------------
-
-Laudo:
-- Técnica:
-- Achados:
-- Impressão:
+- Mesmo se o exame não estiver explicitamente no blueprint, gerar laudo coerente.
 
 =====================================================
 4) MODO LICENÇA — EXAME FÍSICO
 =====================================================
 
 Quando a mensagem começar com Licença:, responder APENAS exame físico objetivo.
-
 Sempre começar com:
 
 Exame físico:
@@ -412,14 +274,9 @@ Exame físico:
 =====================================================
 
 Quando a mensagem começar com Tutor:, responder como tutor médico.
-
 Sempre começar com:
 
 Tutor:
-
-- Seja objetivo
-- Máximo 4 bullets
-- Não entregar tudo pronto
 
 =====================================================
 6) FORMATO
@@ -454,25 +311,15 @@ ${contextBlocks}
 `.trim();
 
   const openai = getOpenAIClient();
-
   const model = getOpenAIModel();
 
   const completion = await openai.chat.completions.create({
     model,
     temperature: 0.25,
-
     messages: [
-      {
-        role: "system",
-        content: system,
-      },
-
+      { role: "system", content: system },
       ...last.map((m) => ({
-        role:
-          m.role === "STUDENT"
-            ? ("user" as const)
-            : ("assistant" as const),
-
+        role: m.role === "STUDENT" ? ("user" as const) : ("assistant" as const),
         content: m.content,
       })),
     ],
@@ -492,11 +339,5 @@ ${contextBlocks}
     },
   });
 
-  return NextResponse.json(
-    {
-      ok: true,
-      reply,
-    },
-    { status: 200 },
-  );
+  return NextResponse.json({ ok: true, reply }, { status: 200 });
 }

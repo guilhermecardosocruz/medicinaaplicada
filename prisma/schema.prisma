@@ -111,10 +111,10 @@ model ConsultMemory {
 }
 
 model Evaluation {
-  id           String   @id @default(cuid())
-  sessionId    String   @unique
+  id        String @id @default(cuid())
+  sessionId String @unique
 
-  score        Int
+  score        Float
   strengths    Json?
   weaknesses   Json?
   improvements Json?
@@ -125,19 +125,19 @@ model Evaluation {
   correctDiagnosis      String?
   diagnosisCorrect      Boolean?
 
-  treatmentPlan         String?
-  treatmentFeedback     String?
-  treatmentScore        Int?
+  treatmentPlan     String?
+  treatmentFeedback String?
+  treatmentScore    Float?
 
-  diagnosisScore        Int?
+  diagnosisScore Float?
 
-  communication Int?
-  anamnesis     Int?
-  reasoning     Int?
-  safety        Int?
-  exams         Int?
-  closing       Int?
-  organization  Int?
+  communication Float?
+  anamnesis     Float?
+  reasoning     Float?
+  safety        Float?
+  exams         Float?
+  closing       Float?
+  organization  Float?
 
   createdAt DateTime @default(now())
 

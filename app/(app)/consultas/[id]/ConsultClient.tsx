@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Msg = {
   id: string;
@@ -10,7 +10,9 @@ type Msg = {
 
 type Evaluation = {
   score: number;
+
   diagnosisScore?: number;
+
   treatmentScore?: number;
 
   feedback: string;
@@ -26,6 +28,7 @@ type Evaluation = {
   organization?: number;
 
   studentDiagnosis?: string;
+
   clinicalJustification?: string;
 
   correctDiagnosis?: string;
@@ -46,10 +49,18 @@ type Session = {
     | "WAITING_TREATMENT"
     | "DONE";
 
+  phase?: string;
+
   messages: Msg[];
 
   evaluation?: Evaluation;
 };
+
+type Mode =
+  | "consult"
+  | "diagnosis"
+  | "treatment"
+  | "done";
 
 function getLabel(m: Msg) {
   if (m.role === "STUDENT") {
@@ -99,28 +110,14 @@ function getBubbleClass(m: Msg) {
   return "bg-[#111827] border border-gray-700";
 }
 
-function renderScore(v?: number) {
-  if (typeof v !== "number") {
-    return "0";
-  }
-
-  return v.toFixed(1);
-}
-
 export default function ConsultClient({ sessionId }: { sessionId: string }) {
   const [session, setSession] = useState<Session | null>(null);
 
   const [text, setText] = useState("");
 
-  const [showDiag, setShowDiag] = useState(false);
+  const [mode, setMode] = useState<Mode>("consult");
 
-  const [diagnosis, setDiagnosis] = useState("");
-
-  const [justification, setJustification] = useState("");
-
-  const [showTreatment, setShowTreatment] = useState(false);
-
-  const [treatmentPlan, setTreatmentPlan] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -135,6 +132,14 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
     if (data.ok) {
       setSession(data.session);
+
+      if (data.session.status === "WAITING_TREATMENT") {
+        setMode("treatment");
+      }
+
+      if (data.session.status === "DONE") {
+        setMode("done");
+      }
     }
   }, [sessionId]);
 
@@ -151,6 +156,14 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
       }
 
       setSession(data.session);
+
+      if (data.session.status === "WAITING_TREATMENT") {
+        setMode("treatment");
+      }
+
+      if (data.session.status === "DONE") {
+        setMode("done");
+      }
 
       const hasTriage = data.session.messages.some((m: Msg) =>
         m.content.includes("TRIAGEM INICIAL"),
@@ -184,18 +197,27 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
     });
   }, [session?.messages]);
 
-  async function send() {
-    if (!text.trim()) {
-      return;
+  const placeholder = useMemo(() => {
+    if (mode === "diagnosis") {
+      return "Digite o diagnóstico principal e sua justificativa clínica...";
     }
 
-    if (
-      session?.status === "WAITING_TREATMENT" ||
-      session?.status === "DONE"
-    ) {
-      return;
+    if (mode === "treatment") {
+      return `Descreva:
+- internação ou alta
+- tratamento inicial
+- medicações
+- doses
+- exames adicionais
+- orientações
+- retorno
+- atestado`;
     }
 
+    return "Digite sua mensagem...";
+  }, [mode]);
+
+  async function sendNormalMessage(message: string) {
     await fetch(`/api/sessions/${sessionId}/messages`, {
       method: "POST",
 
@@ -204,17 +226,13 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
       },
 
       body: JSON.stringify({
-        content: text,
+        content: message,
       }),
     });
-
-    setText("");
-
-    await load();
   }
 
-  async function saveDiagnosis() {
-    const res = await fetch(`/api/sessions/${sessionId}/diagnosis`, {
+  async function sendDiagnosis(message: string) {
+    await fetch(`/api/sessions/${sessionId}/diagnosis`, {
       method: "POST",
 
       headers: {
@@ -222,30 +240,19 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
       },
 
       body: JSON.stringify({
-        diagnosis,
-        justification,
+        diagnosis: message,
       }),
     });
-
-    if (!res.ok) {
-      return;
-    }
 
     await fetch(`/api/sessions/${sessionId}/finalize`, {
       method: "POST",
     });
 
-    setShowDiag(false);
-
-    setDiagnosis("");
-
-    setJustification("");
-
-    await load();
+    setMode("treatment");
   }
 
-  async function saveTreatment() {
-    const res = await fetch(`/api/sessions/${sessionId}/treatment`, {
+  async function sendTreatment(message: string) {
+    await fetch(`/api/sessions/${sessionId}/treatment`, {
       method: "POST",
 
       headers: {
@@ -253,19 +260,43 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
       },
 
       body: JSON.stringify({
-        treatmentPlan,
+        treatmentPlan: message,
       }),
     });
 
-    if (!res.ok) {
+    setMode("done");
+  }
+
+  async function send() {
+    if (!text.trim()) {
       return;
     }
 
-    setShowTreatment(false);
+    if (!session) {
+      return;
+    }
 
-    setTreatmentPlan("");
+    if (loading) {
+      return;
+    }
 
-    await load();
+    setLoading(true);
+
+    try {
+      if (mode === "consult") {
+        await sendNormalMessage(text);
+      } else if (mode === "diagnosis") {
+        await sendDiagnosis(text);
+      } else if (mode === "treatment") {
+        await sendTreatment(text);
+      }
+
+      setText("");
+
+      await load();
+    } finally {
+      setLoading(false);
+    }
   }
 
   function handleKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -275,11 +306,49 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
     }
   }
 
-  function format(m: Msg) {
+  async function startDiagnosis() {
+    setMode("diagnosis");
+
+    await fetch(`/api/sessions/${sessionId}/messages`, {
+      method: "POST",
+
+      headers: {
+        "Content-Type": "application/json",
+      },
+
+      body: JSON.stringify({
+        content:
+          "Tutor: Agora informe o diagnóstico principal e explique seu raciocínio clínico.",
+      }),
+    });
+
+    await load();
+  }
+
+  async function startTreatment() {
+    await fetch(`/api/sessions/${sessionId}/treatment`, {
+      method: "POST",
+
+      headers: {
+        "Content-Type": "application/json",
+      },
+
+      body: JSON.stringify({
+        action: "start",
+      }),
+    });
+
+    setMode("treatment");
+
+    await load();
+  }
+
+  function renderMessage(m: Msg) {
     const label = getLabel(m);
 
     return (
       <div key={m.id} className="mb-3">
+
         <div className="font-semibold text-sm mb-1">
           {label}
         </div>
@@ -289,6 +358,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
         >
           {m.content.replace(/ - /g, "\n- ")}
         </div>
+
       </div>
     );
   }
@@ -298,289 +368,125 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <div className="flex min-h-screen justify-center">
+    <div className="flex min-h-screen justify-center bg-[#020817]">
+
       <div className="w-full max-w-3xl px-4 pt-4 pb-40">
 
         <div className="mb-4">
-          <div className="text-lg font-bold">
+
+          <div className="text-lg font-bold text-white">
             {session.case.title}
           </div>
 
           <div className="text-xs text-gray-400">
             {session.status}
           </div>
+
         </div>
 
         <div>
-          {session.messages.map(format)}
+          {session.messages.map(renderMessage)}
           <div ref={bottomRef} />
         </div>
 
-        {session.evaluation && (
-          <div className="mt-6 p-4 bg-white text-black rounded-xl">
-
-            <div className="font-bold text-lg mb-4">
-              Avaliação diagnóstica
-            </div>
-
-            <div className="mb-4">
-              <div className="font-semibold">
-                Diagnóstico do aluno
-              </div>
-
-              <div>
-                {session.evaluation.studentDiagnosis}
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <div className="font-semibold">
-                Diagnóstico correto
-              </div>
-
-              <div>
-                {session.evaluation.correctDiagnosis}
-              </div>
-            </div>
-
-            <div className="mt-4 mb-4">
-              <div>
-                Comunicação: {renderScore(session.evaluation.communication)}/1
-              </div>
-
-              <div>
-                Anamnese: {renderScore(session.evaluation.anamnesis)}/1
-              </div>
-
-              <div>
-                Raciocínio: {renderScore(session.evaluation.reasoning)}/1
-              </div>
-
-              <div>
-                Segurança: {renderScore(session.evaluation.safety)}/1
-              </div>
-
-              <div>
-                Exames: {renderScore(session.evaluation.exams)}/1
-              </div>
-
-              <div>
-                Encerramento: {renderScore(session.evaluation.closing)}/1
-              </div>
-
-              <div>
-                Organização: {renderScore(session.evaluation.organization)}/1
-              </div>
-            </div>
-
-            {session.evaluation.diagnosisScore != null && (
-              <div className="mb-4 font-bold">
-                Nota diagnóstica total: {session.evaluation.diagnosisScore}/10
-              </div>
-            )}
-
-            <div className="whitespace-pre-wrap text-sm">
-              {session.evaluation.feedback}
-            </div>
-
-            {session.status === "WAITING_TREATMENT" && (
-              <div className="mt-6 border-t pt-4">
-
-                <button
-                  onClick={() => setShowTreatment(true)}
-                  className="w-full bg-black text-white p-3 rounded-xl"
-                >
-                  Encerrar caso e definir tratamento
-                </button>
-
-              </div>
-            )}
-
-            {session.status === "DONE" && (
-              <div className="mt-6 border-t pt-4">
-
-                <div className="font-bold text-lg">
-                  Avaliação terapêutica e encerramento
-                </div>
-
-                <div className="mt-3 whitespace-pre-wrap">
-                  {session.evaluation.treatmentPlan}
-                </div>
-
-                <div className="mt-4 whitespace-pre-wrap text-sm">
-                  {session.evaluation.treatmentFeedback}
-                </div>
-
-                <div className="mt-4">
-                  <div className="font-bold">
-                    Nota terapêutica: {session.evaluation.treatmentScore}/10
-                  </div>
-
-                  <div className="font-bold text-xl mt-2">
-                    Média final da consulta: {session.evaluation.score}/10
-                  </div>
-                </div>
-
-              </div>
-            )}
-
-          </div>
-        )}
-
-        {session.status === "IN_PROGRESS" && (
+        {mode !== "done" && (
           <div className="fixed bottom-0 left-0 right-0 bg-[#0b1220] border-t border-gray-700">
+
             <div className="max-w-3xl mx-auto p-3">
 
-              <div className="flex gap-2 mb-2 text-xs">
-                <button
-                  onClick={() => setText("Equipe: ")}
-                  className="border px-2 py-1 rounded"
-                >
-                  Equipe
-                </button>
+              {mode === "consult" && (
+                <div className="flex gap-2 mb-2 text-xs overflow-x-auto">
 
-                <button
-                  onClick={() => setText("Licença: ")}
-                  className="border px-2 py-1 rounded"
-                >
-                  Licença
-                </button>
+                  <button
+                    onClick={() => setText("Equipe: ")}
+                    className="border px-2 py-1 rounded text-white"
+                  >
+                    Equipe
+                  </button>
 
-                <button
-                  onClick={() => setText("Tutor: ")}
-                  className="border px-2 py-1 rounded"
-                >
-                  Tutor
-                </button>
+                  <button
+                    onClick={() => setText("Licença: ")}
+                    className="border px-2 py-1 rounded text-white"
+                  >
+                    Licença
+                  </button>
 
-                <button
-                  onClick={() => setShowDiag(true)}
-                  className="ml-auto border px-3 py-1 rounded"
-                >
-                  Diagnosticar
-                </button>
-              </div>
+                  <button
+                    onClick={() => setText("Tutor: ")}
+                    className="border px-2 py-1 rounded text-white"
+                  >
+                    Tutor
+                  </button>
+
+                  <button
+                    onClick={startDiagnosis}
+                    className="ml-auto border px-3 py-1 rounded bg-white text-black"
+                  >
+                    Diagnóstico
+                  </button>
+
+                </div>
+              )}
+
+              {mode === "diagnosis" && (
+                <div className="flex gap-2 mb-2 text-xs">
+
+                  <div className="px-3 py-1 rounded bg-amber-900 text-white border border-amber-700">
+                    Fase diagnóstica
+                  </div>
+
+                  <button
+                    onClick={startTreatment}
+                    className="ml-auto border px-3 py-1 rounded bg-white text-black"
+                  >
+                    Tratamento
+                  </button>
+
+                </div>
+              )}
+
+              {mode === "treatment" && (
+                <div className="flex gap-2 mb-2 text-xs">
+
+                  <div className="px-3 py-1 rounded bg-emerald-900 text-white border border-emerald-700">
+                    Fase terapêutica
+                  </div>
+
+                  <div className="ml-auto px-3 py-1 rounded bg-white text-black">
+                    Encerramento após envio
+                  </div>
+
+                </div>
+              )}
 
               <div className="flex gap-2">
+
                 <textarea
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   onKeyDown={handleKey}
-                  className="flex-1 p-2 rounded bg-white text-black"
-                  rows={2}
+                  className="flex-1 p-3 rounded bg-white text-black"
+                  rows={4}
+                  placeholder={placeholder}
                 />
 
                 <button
                   onClick={send}
-                  className="px-4 py-2 border rounded bg-white text-black"
+                  disabled={loading}
+                  className="px-4 py-2 border rounded bg-white text-black min-w-[100px]"
                 >
-                  Enviar
+                  {loading ? "..." : "Enviar"}
                 </button>
+
               </div>
 
             </div>
-          </div>
-        )}
 
-        {showDiag && (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center">
-            <div className="bg-white text-black p-6 rounded-xl w-full max-w-md">
-
-              <div className="text-lg font-bold mb-4">
-                Fechar diagnóstico
-              </div>
-
-              <input
-                value={diagnosis}
-                onChange={(e) => setDiagnosis(e.target.value)}
-                className="w-full border p-2 mb-3 rounded"
-                placeholder="Diagnóstico"
-              />
-
-              <textarea
-                value={justification}
-                onChange={(e) => setJustification(e.target.value)}
-                className="w-full border p-2 mb-4 rounded"
-                rows={4}
-                placeholder="Justificativa clínica"
-              />
-
-              <div className="flex gap-2">
-                <button
-                  onClick={saveDiagnosis}
-                  className="flex-1 bg-black text-white p-2 rounded"
-                >
-                  Salvar diagnóstico
-                </button>
-
-                <button
-                  onClick={() => setShowDiag(false)}
-                  className="flex-1 border p-2 rounded"
-                >
-                  Cancelar
-                </button>
-              </div>
-
-            </div>
-          </div>
-        )}
-
-        {showTreatment && (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center">
-            <div className="bg-white text-black p-6 rounded-xl w-full max-w-2xl">
-
-              <div className="text-lg font-bold mb-4">
-                Encerramento e tratamento
-              </div>
-
-              <div className="text-sm mb-3 text-gray-700">
-                Descreva:
-                <br />
-                - necessidade de internação;
-                <br />
-                - tratamento inicial;
-                <br />
-                - medicações;
-                <br />
-                - dose e modo de uso;
-                <br />
-                - exames adicionais;
-                <br />
-                - orientações;
-                <br />
-                - retorno;
-                <br />
-                - atestado se necessário.
-              </div>
-
-              <textarea
-                value={treatmentPlan}
-                onChange={(e) => setTreatmentPlan(e.target.value)}
-                className="w-full border p-2 mb-4 rounded"
-                rows={12}
-              />
-
-              <div className="flex gap-2">
-                <button
-                  onClick={saveTreatment}
-                  className="flex-1 bg-black text-white p-2 rounded"
-                >
-                  Finalizar caso
-                </button>
-
-                <button
-                  onClick={() => setShowTreatment(false)}
-                  className="flex-1 border p-2 rounded"
-                >
-                  Cancelar
-                </button>
-              </div>
-
-            </div>
           </div>
         )}
 
       </div>
+
     </div>
   );
 }
