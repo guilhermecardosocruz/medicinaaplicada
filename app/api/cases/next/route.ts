@@ -11,6 +11,14 @@ function safeJsonParse(text: string) {
   }
 }
 
+function normalizeDiagnosis(text: string) {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim();
+}
+
 export async function POST(req: NextRequest) {
   const me = getSessionUser(req);
 
@@ -18,10 +26,49 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
 
+  const recentCases = await prisma.case.findMany({
+    take: 15,
+
+    orderBy: {
+      createdAt: "desc",
+    },
+
+    select: {
+      blueprint: true,
+    },
+  });
+
+  const recentDiagnoses = recentCases
+    .map((c) => {
+      const blueprint =
+        typeof c.blueprint === "object" &&
+        c.blueprint !== null
+          ? (c.blueprint as Record<string, unknown>)
+          : {};
+
+      const diagnosis =
+        typeof blueprint.correctDiagnosis === "string"
+          ? blueprint.correctDiagnosis
+          : "";
+
+      return normalizeDiagnosis(diagnosis);
+    })
+    .filter(Boolean);
+
+  const uniqueRecentDiagnoses = [...new Set(recentDiagnoses)];
+
+  const avoidList =
+    uniqueRecentDiagnoses.length > 0
+      ? uniqueRecentDiagnoses.map((d) => `- ${d}`).join("\n")
+      : "- nenhum";
+
   const openai = getOpenAIClient();
 
   const system = `
 Você é um gerador de casos clínicos médicos realistas.
+
+OBJETIVO:
+Gerar casos variados, educativos e NÃO repetitivos.
 
 IMPORTANTE:
 - O nome do paciente é OBRIGATÓRIO.
@@ -29,6 +76,20 @@ IMPORTANTE:
 - Gere um caso plausível e coerente.
 - O diagnóstico correto deve ficar oculto do estudante.
 - O tratamento ideal deve ficar oculto do estudante.
+- Evite repetir diagnósticos usados recentemente.
+- Não fique preso apenas em doenças comuns.
+- Varie:
+  - gravidade
+  - idade
+  - sexo
+  - especialidade
+  - contexto clínico
+
+DIAGNÓSTICOS RECENTES PARA EVITAR:
+${avoidList}
+
+Você PODE repetir eventualmente,
+mas tente evitar repetir logo em seguida.
 
 Retorne APENAS JSON válido.
 
@@ -63,7 +124,7 @@ Formato:
   const completion = await openai.chat.completions.create({
     model: getOpenAIModel(),
 
-    temperature: 0.7,
+    temperature: 1,
 
     messages: [
       {
@@ -73,7 +134,8 @@ Formato:
 
       {
         role: "user",
-        content: "Gere um caso clínico aleatório de pronto atendimento.",
+        content:
+          "Gere um caso clínico aleatório de pronto atendimento.",
       },
     ],
   });
