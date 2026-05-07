@@ -199,7 +199,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
   const placeholder = useMemo(() => {
     if (mode === "diagnosis") {
-      return "Digite o diagnóstico principal e sua justificativa clínica...";
+      return "Digite o diagnóstico principal e explique seu raciocínio clínico...";
     }
 
     if (mode === "treatment") {
@@ -306,23 +306,8 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
     }
   }
 
-  async function startDiagnosis() {
+  function startDiagnosis() {
     setMode("diagnosis");
-
-    await fetch(`/api/sessions/${sessionId}/messages`, {
-      method: "POST",
-
-      headers: {
-        "Content-Type": "application/json",
-      },
-
-      body: JSON.stringify({
-        content:
-          "Tutor: Agora informe o diagnóstico principal e explique seu raciocínio clínico.",
-      }),
-    });
-
-    await load();
   }
 
   async function startTreatment() {
@@ -435,13 +420,6 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
                     Fase diagnóstica
                   </div>
 
-                  <button
-                    onClick={startTreatment}
-                    className="ml-auto border px-3 py-1 rounded bg-white text-black"
-                  >
-                    Tratamento
-                  </button>
-
                 </div>
               )}
 
@@ -450,10 +428,6 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
 
                   <div className="px-3 py-1 rounded bg-emerald-900 text-white border border-emerald-700">
                     Fase terapêutica
-                  </div>
-
-                  <div className="ml-auto px-3 py-1 rounded bg-white text-black">
-                    Encerramento após envio
                   </div>
 
                 </div>
