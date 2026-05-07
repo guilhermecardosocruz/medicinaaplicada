@@ -99,8 +99,12 @@ function getBubbleClass(m: Msg) {
   return "bg-[#111827] border border-gray-700";
 }
 
-function renderCriterion(v?: number) {
-  return v === 1 ? "✔️" : "❌";
+function renderScore(v?: number) {
+  if (typeof v !== "number") {
+    return "0";
+  }
+
+  return v.toFixed(1);
 }
 
 export default function ConsultClient({ sessionId }: { sessionId: string }) {
@@ -316,7 +320,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
           <div className="mt-6 p-4 bg-white text-black rounded-xl">
 
             <div className="font-bold text-lg mb-4">
-              Avaliação clínica
+              Avaliação diagnóstica
             </div>
 
             <div className="mb-4">
@@ -339,25 +343,39 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
               </div>
             </div>
 
-            <div className="mb-4">
-              Comunicação: {renderCriterion(session.evaluation.communication)}
-              <br />
-              Anamnese: {renderCriterion(session.evaluation.anamnesis)}
-              <br />
-              Raciocínio: {renderCriterion(session.evaluation.reasoning)}
-              <br />
-              Segurança: {renderCriterion(session.evaluation.safety)}
-              <br />
-              Exames: {renderCriterion(session.evaluation.exams)}
-              <br />
-              Organização: {renderCriterion(session.evaluation.organization)}
+            <div className="mt-4 mb-4">
+              <div>
+                Comunicação: {renderScore(session.evaluation.communication)}/1
+              </div>
+
+              <div>
+                Anamnese: {renderScore(session.evaluation.anamnesis)}/1
+              </div>
+
+              <div>
+                Raciocínio: {renderScore(session.evaluation.reasoning)}/1
+              </div>
+
+              <div>
+                Segurança: {renderScore(session.evaluation.safety)}/1
+              </div>
+
+              <div>
+                Exames: {renderScore(session.evaluation.exams)}/1
+              </div>
+
+              <div>
+                Encerramento: {renderScore(session.evaluation.closing)}/1
+              </div>
+
+              <div>
+                Organização: {renderScore(session.evaluation.organization)}/1
+              </div>
             </div>
 
             {session.evaluation.diagnosisScore != null && (
-              <div className="mb-4">
-                <div className="font-bold">
-                  Nota diagnóstica: {session.evaluation.diagnosisScore}/10
-                </div>
+              <div className="mb-4 font-bold">
+                Nota diagnóstica total: {session.evaluation.diagnosisScore}/10
               </div>
             )}
 
@@ -382,7 +400,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
               <div className="mt-6 border-t pt-4">
 
                 <div className="font-bold text-lg">
-                  Avaliação terapêutica
+                  Avaliação terapêutica e encerramento
                 </div>
 
                 <div className="mt-3 whitespace-pre-wrap">
@@ -399,7 +417,7 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
                   </div>
 
                   <div className="font-bold text-xl mt-2">
-                    Nota final da consulta: {session.evaluation.score}/10
+                    Média final da consulta: {session.evaluation.score}/10
                   </div>
                 </div>
 
@@ -515,12 +533,31 @@ export default function ConsultClient({ sessionId }: { sessionId: string }) {
                 Encerramento e tratamento
               </div>
 
+              <div className="text-sm mb-3 text-gray-700">
+                Descreva:
+                <br />
+                - necessidade de internação;
+                <br />
+                - tratamento inicial;
+                <br />
+                - medicações;
+                <br />
+                - dose e modo de uso;
+                <br />
+                - exames adicionais;
+                <br />
+                - orientações;
+                <br />
+                - retorno;
+                <br />
+                - atestado se necessário.
+              </div>
+
               <textarea
                 value={treatmentPlan}
                 onChange={(e) => setTreatmentPlan(e.target.value)}
                 className="w-full border p-2 mb-4 rounded"
                 rows={12}
-                placeholder="Medicações, exames adicionais, internação, orientações, retorno, monitorização..."
               />
 
               <div className="flex gap-2">

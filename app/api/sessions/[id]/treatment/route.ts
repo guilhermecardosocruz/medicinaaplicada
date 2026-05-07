@@ -5,6 +5,7 @@ import { getOpenAIClient, getOpenAIModel } from "@/lib/openai";
 
 type TreatmentEval = {
   treatmentScore?: number;
+
   treatmentFeedback?: string;
 };
 
@@ -61,23 +62,31 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   }
 
   const system = `
-Você é um avaliador médico pedagógico.
+Você é um tutor médico avaliando ENCERRAMENTO E TRATAMENTO.
 
-Avalie o plano terapêutico do aluno.
+Você deve analisar:
+- necessidade de internação;
+- medicações;
+- dose e modo de uso;
+- exames adicionais;
+- retorno;
+- orientações;
+- segurança;
+- atestado;
+- monitorização;
+- encaminhamento.
 
-Analise:
-- medicações
-- segurança
-- necessidade de internação
-- exames adicionais
-- orientações
-- seguimento
+IMPORTANTE:
+- notas de 0 até 10
+- pode usar notas parciais
+- seja justo
+- explique o motivo da nota
 
 Retorne APENAS JSON:
 
 {
   "treatmentScore": número de 0 a 10,
-  "treatmentFeedback": "feedback pedagógico"
+  "treatmentFeedback": "feedback detalhado estilo tutor humano"
 }
 `.trim();
 
@@ -88,7 +97,7 @@ ${session.case.seed}
 DIAGNÓSTICO CORRETO:
 ${session.evaluation.correctDiagnosis}
 
-PLANO TERAPÊUTICO DO ALUNO:
+PLANO TERAPÊUTICO:
 ${treatmentPlan}
 `.trim();
 
@@ -97,7 +106,7 @@ ${treatmentPlan}
   const completion = await openai.chat.completions.create({
     model: getOpenAIModel(),
 
-    temperature: 0.2,
+    temperature: 0.3,
 
     messages: [
       {
@@ -118,14 +127,18 @@ ${treatmentPlan}
 
   const treatmentScore =
     typeof parsed?.treatmentScore === "number"
-      ? Math.max(0, Math.min(10, Math.round(parsed.treatmentScore)))
+      ? Math.max(0, Math.min(10, Number(parsed.treatmentScore.toFixed(1))))
       : 0;
 
   const diagnosisScore =
     session.evaluation.diagnosisScore || 0;
 
   const finalScore =
-    Math.round((diagnosisScore + treatmentScore) / 2);
+    Number(
+      (
+        (diagnosisScore + treatmentScore) / 2
+      ).toFixed(1),
+    );
 
   const treatmentFeedback =
     parsed?.treatmentFeedback?.trim() ||

@@ -35,8 +35,12 @@ function safeJsonParse(text: string): EvalResponse | null {
   }
 }
 
-function clamp01(v: unknown) {
-  return v === 1 ? 1 : 0;
+function clampScore(v: unknown) {
+  if (typeof v !== "number") {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(1, Number(v.toFixed(1))));
 }
 
 function normalize(text: string) {
@@ -98,40 +102,41 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     session.evaluation.clinicalJustification || "";
 
   const system = `
-Você é um tutor médico experiente e professor de medicina.
+Você é um tutor médico humano experiente.
+
+Você deve:
+- avaliar o estudante de forma JUSTA
+- usar notas PARCIAIS
+- evitar notas 0 absolutas sem necessidade
+- valorizar boas decisões mesmo em consultas incompletas
+- explicar o motivo da nota
+- agir como professor humano
 
 IMPORTANTE:
-- Você deve agir como um tutor humano.
-- Explique o raciocínio clínico correto.
-- Explique o que o estudante deveria ter investigado.
-- Explique quais pistas clínicas indicavam o diagnóstico correto.
-- Seja didático.
-- Nunca deixe feedback vazio.
-- Nunca deixe o diagnóstico correto vazio.
-- Nunca responda "não identificado".
-- Mesmo quando o aluno erra, valorize os pontos positivos.
-- O aluno pode ganhar pontos mesmo errando o diagnóstico.
-- Se o aluno acertar, parabenize explicitamente.
+- as notas devem ir de 0 até 1
+- pode usar 0.1, 0.2, 0.5, 0.7 etc
+- comunicação NÃO deve zerar facilmente
+- valorize tentativa de raciocínio clínico
 
 Retorne APENAS JSON válido.
 
 Formato:
 {
-  "communication": 0 ou 1,
-  "anamnesis": 0 ou 1,
-  "reasoning": 0 ou 1,
-  "safety": 0 ou 1,
-  "exams": 0 ou 1,
-  "closing": 0 ou 1,
-  "organization": 0 ou 1,
+  "communication": 0-1,
+  "anamnesis": 0-1,
+  "reasoning": 0-1,
+  "safety": 0-1,
+  "exams": 0-1,
+  "closing": 0-1,
+  "organization": 0-1,
 
-  "correctDiagnosis": "diagnóstico correto",
+  "correctDiagnosis": "texto",
 
-  "diagnosisExplanation": "explicação do raciocínio clínico correto",
+  "diagnosisExplanation": "texto",
 
-  "studentFeedback": "feedback pedagógico estilo tutor humano",
+  "studentFeedback": "texto",
 
-  "feedback": "resumo final",
+  "feedback": "texto",
 
   "strengths": [],
   "weaknesses": [],
@@ -140,14 +145,13 @@ Formato:
 `.trim();
 
   const user = `
-CASO CLÍNICO:
-
+CASO:
 ${session.case.seed}
 
 DIAGNÓSTICO ESPERADO:
 ${blueprintDiagnosis}
 
-TRANSCRIÇÃO DA CONSULTA:
+CONSULTA:
 ${transcript}
 
 DIAGNÓSTICO DO ESTUDANTE:
@@ -182,13 +186,13 @@ ${studentJustification}
 
   const parsed = safeJsonParse(raw);
 
-  const communication = clamp01(parsed?.communication);
-  const anamnesis = clamp01(parsed?.anamnesis);
-  const reasoning = clamp01(parsed?.reasoning);
-  const safety = clamp01(parsed?.safety);
-  const exams = clamp01(parsed?.exams);
-  const closing = clamp01(parsed?.closing);
-  const organization = clamp01(parsed?.organization);
+  const communication = clampScore(parsed?.communication);
+  const anamnesis = clampScore(parsed?.anamnesis);
+  const reasoning = clampScore(parsed?.reasoning);
+  const safety = clampScore(parsed?.safety);
+  const exams = clampScore(parsed?.exams);
+  const closing = clampScore(parsed?.closing);
+  const organization = clampScore(parsed?.organization);
 
   const correctDiagnosis =
     parsed?.correctDiagnosis?.trim() ||
@@ -221,11 +225,14 @@ ${studentJustification}
     diagnosisCorrect ? 3 : 0;
 
   const diagnosisScore =
-    Math.min(criteriaScore + diagnosisBonus, 10);
+    Math.min(
+      Number((criteriaScore + diagnosisBonus).toFixed(1)),
+      10,
+    );
 
   const diagnosisExplanation =
     parsed?.diagnosisExplanation?.trim() ||
-    "O caso precisava de melhor correlação clínica entre sintomas, exame físico e exames complementares.";
+    "O caso precisava de melhor correlação clínica.";
 
   let studentFeedback =
     parsed?.studentFeedback?.trim() ||
@@ -234,10 +241,10 @@ ${studentJustification}
   if (!studentFeedback) {
     if (diagnosisCorrect) {
       studentFeedback =
-        "Parabéns. O raciocínio clínico utilizado foi compatível com o diagnóstico correto.";
+        "Parabéns. O raciocínio clínico foi compatível com o diagnóstico correto.";
     } else {
       studentFeedback =
-        `O diagnóstico principal esperado era ${correctDiagnosis}. Você apresentou outra hipótese diagnóstica, porém alguns elementos importantes do caso deveriam ter sido melhor explorados.`;
+        `O diagnóstico principal esperado era ${correctDiagnosis}. Algumas pistas clínicas importantes deveriam ter sido melhor exploradas.`;
     }
   }
 
@@ -250,30 +257,28 @@ ${studentJustification}
 Tutor:
 Parabéns. Você conseguiu identificar corretamente o diagnóstico principal do caso.
 
-Os dados clínicos, os sintomas apresentados e os exames solicitados estavam compatíveis com ${correctDiagnosis}.
+Os sinais clínicos, sintomas e exames complementares estavam compatíveis com ${correctDiagnosis}.
 
 Seu raciocínio clínico foi adequado para o cenário apresentado.
 `.trim()
     : `
 Tutor:
-O diagnóstico principal esperado neste caso era:
+O diagnóstico principal esperado era:
 
 ${correctDiagnosis}
 
-O diagnóstico informado pelo estudante não corresponde ao quadro clínico principal esperado.
-
 Para chegar ao diagnóstico correto, seria importante investigar melhor:
 
-- relação entre sintomas e esforço físico;
-- padrão temporal da dor;
+- padrão temporal dos sintomas;
+- evolução clínica;
 - sinais de gravidade;
-- correlação clínica com os exames complementares;
-- hipóteses cardiovasculares prioritárias.
+- correlação entre sintomas e exames;
+- principais diagnósticos diferenciais.
 
 Pistas importantes do caso:
 ${diagnosisExplanation}
 
-Mesmo assim, alguns aspectos positivos da consulta foram observados e o caso pode continuar para definição do tratamento.
+Mesmo assim, alguns aspectos positivos foram identificados na condução clínica.
 `.trim();
 
   const finalFeedback = `
